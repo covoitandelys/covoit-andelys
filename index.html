@@ -288,7 +288,7 @@ async function publish(){
   $('#pub').disabled=false; if(error)return toast(errMsg(error)); toast('Trajet publié 🚗'); go('mine');
 }
 async function callFn(body){
-  const {data,error}=await sb.functions.invoke('Stripe',{body});
+  const {data,error}=await sb.functions.invoke('rapid-task',{body});
   if(error){ let m=error.message; try{ const j=await error.context.json(); if(j?.error) m=j.error; }catch(e){} throw new Error(m); }
   if(data?.error) throw new Error(data.error); return data;
 }

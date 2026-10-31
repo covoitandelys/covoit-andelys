@@ -92,7 +92,7 @@ function dayLabel(d){const t=new Date();t.setHours(0,0,0,0);const x=new Date(d);
 const nextHour = () => String((new Date().getHours()+1)%24).padStart(2,'0')+':00';
 const today = () => { const d=new Date(); return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10); };
 const av = n => `<span class="av" style="background:${COLORS[(n||'?').charCodeAt(0)%COLORS.length]}">${esc((n||'?')[0].toUpperCase())}</span>`;
-function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',2600);}
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',Math.max(2600,m.length*60));}
 const opts = (sel,blank) => (blank?`<option value="">${blank}</option>`:'')+NAMES.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('');
 function sheet(html){$('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 function closeSheet(){const wasChat=!!chatTimer;$('#bg').style.display='none';clearInterval(chatTimer);chatTimer=null;if(wasChat&&tab==='mine')render();}
@@ -288,7 +288,7 @@ async function publish(){
   $('#pub').disabled=false; if(error)return toast(errMsg(error)); toast('Trajet publié 🚗'); go('mine');
 }
 async function callFn(body){
-  const {data,error}=await sb.functions.invoke('rapid-task',{body});
+  const {data,error}=await sb.functions.invoke('quick-processor',{body});
   if(error){ let m=error.message; try{ const j=await error.context.json(); if(j?.error) m=j.error; }catch(e){} throw new Error(m); }
   if(data?.error) throw new Error(data.error); return data;
 }

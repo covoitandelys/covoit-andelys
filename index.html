@@ -95,6 +95,7 @@ const today = () => { const d=new Date(); return new Date(d-d.getTimezoneOffset(
 const av = (n, url, sz) => { const st=sz?`width:${sz}px;height:${sz}px;font-size:${Math.round(sz*0.4)}px;`:''; return url ? `<img class="av" src="${esc(url)}" alt="" style="${st}object-fit:cover">` : `<span class="av" style="${st}background:${COLORS[(n||'?').charCodeAt(0)%COLORS.length]}">${esc((n||'?')[0].toUpperCase())}</span>`; };
 const LUGGAGE = {none:'🚫 Pas de bagage', small:'🎒 Petit bagage', large:'🧳 Valise acceptée'};
 const tripOpts = t => [LUGGAGE[t.luggage]||LUGGAGE.small, t.pets?'🐾 Animaux acceptés':'🐾 Pas d\'animaux', t.max2_back?'💺 Max 2 à l\'arrière':'', '🚭 Non-fumeur'].filter(Boolean).join(' · ');
+const seatsText = (left,total) => left>0 ? `👥 ${left} place${left>1?'s':''} disponible${left>1?'s':''} sur ${total}` : `👥 Complet (${total} place${total>1?'s':''})`;
 const carText = d => [d?.car_model, d?.car_color].filter(Boolean).map(esc).join(' · ');
 function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',Math.max(2600,m.length*60));}
 const opts = (sel,blank) => (blank?`<option value="">${blank}</option>`:'')+NAMES.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('');
@@ -146,9 +147,10 @@ function tripCard(t, actions){
    <div class="price">${eur(t.price)}<small>par place</small></div></div>
    <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)} · `:''}${tripOpts(t)}</div>
    ${t.meeting_point?`<div class="hint">📍 RDV : ${esc(t.meeting_point)}</div>`:''}
+   <div class="hint" style="font-weight:700;color:${left>0?'var(--g)':'#b91c1c'}">${seatsText(left,t.seats)}</div>
    ${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}
    <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${t.driver?.verified?'<span class="tag t-ok">✓ Vérifié</span>':''}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}<br><small style="color:var(--m)">${dayLabel(d)}</small></div></div>
-   ${actions ?? (left>0?`<button class="btn small" onclick="openTrip('${t.id}')">${left} place${left>1?'s':''}</button>`:'<span style="color:var(--m)">Complet</span>')}</div></div>`;
+   ${actions ?? (left>0?`<button class="btn small" onclick="openTrip('${t.id}')">Réserver</button>`:'<span style="color:var(--m)">Complet</span>')}</div></div>`;
 }
 
 let tripsCache = [];
@@ -360,7 +362,7 @@ function go(t){tab=t;render();scrollTo(0,0);}
 function openTrip(id){
   if (!user){ toast('Crée un compte pour réserver'); return go('profile'); }
   const t = tripsCache.find(x=>x.id===id), left=t.seats-t.booked, d=new Date(t.depart_at); bookInstant=t.instant;
-  sheet(`<h2>${esc(t.from_place)} → ${esc(t.to_place)}</h2><div class="hint">${dayLabel(d)} à ${hm(d)} · ${t.km} km</div>
+  sheet(`<h2>${esc(t.from_place)} → ${esc(t.to_place)}</h2><div class="hint">${dayLabel(d)} à ${hm(d)} · ${t.km} km · <b style="color:var(--g)">${seatsText(left,t.seats)}</b></div>
     <div class="card" style="box-shadow:none;border:1px solid var(--b);margin-top:12px"><div class="drv">${av(t.driver?.first_name, t.driver?.avatar_url, 56)}<div><b style="font-size:18px">${esc(t.driver?.first_name)}</b>${t.driver?.verified?'<span class="tag t-ok">✓ Vérifié</span>':''}<br><small class="hint" id="dstats">…</small></div></div>
      ${t.driver?.bio?`<div class="hint" style="font-style:italic">« ${esc(t.driver.bio)} »</div>`:''}
      <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)}<br>`:''}${tripOpts(t).split(' · ').join('<br>')}${carText(t.driver)?'<br><small>La plaque te sera montrée une fois ta demande acceptée.</small>':''}</div>

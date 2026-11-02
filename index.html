@@ -166,14 +166,16 @@ async function render(){
      <button class="link" onclick="[filter.from,filter.to]=[filter.to,filter.from];render()">⇅ Inverser</button>
      <label style="margin-top:0">Arrivée</label><select id="ft">${opts(filter.to,'Partout')}</select>
      <label>Date</label><input type="date" id="fd" value="${filter.date}" min="${today()}">
-     <div class="chips"><button class="chip" onclick="filter={from:'',to:'',date:''};render()">Tout afficher</button></div></div>
+     <div class="chips"><button class="chip${filter.women?' on':''}" onclick="filter.women=!filter.women;render()">♀ Trajets entre femmes</button><button class="chip${filter.verified?' on':''}" onclick="filter.verified=!filter.verified;render()">✓ Conducteurs vérifiés</button><button class="chip" onclick="filter={from:'',to:'',date:''};render()">Tout afficher</button></div></div>
      <div id="list"><div class="empty">Chargement des trajets…</div></div>`;
-    ['ff','ft','fd'].forEach(id=>$('#'+id).onchange=()=>{filter={from:$('#ff').value,to:$('#ft').value,date:$('#fd').value};render();});
+    ['ff','ft','fd'].forEach(id=>$('#'+id).onchange=()=>{filter={...filter,from:$('#ff').value,to:$('#ft').value,date:$('#fd').value};render();});
     let q = sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio)').gte('depart_at', new Date(Date.now()-15*6e4).toISOString()).order('depart_at').limit(100);
     if (filter.from) q = q.eq('from_place', filter.from);
     if (filter.to) q = q.eq('to_place', filter.to);
     if (filter.date){ const s=new Date(filter.date+'T00:00'); q = q.gte('depart_at', s.toISOString()).lt('depart_at', new Date(s.getTime()+864e5).toISOString()); }
-    const { data, error } = await q;
+    if (filter.women) q = q.eq('women_only', true);
+    let { data, error } = await q;
+    if (!error && filter.verified) data = data.filter(t=>t.driver?.verified);
     if (error){ $('#list').innerHTML = `<div class="empty">Erreur de chargement : ${esc(error.message)}</div>`; return; }
     tripsCache = data;
     $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
@@ -212,7 +214,7 @@ async function render(){
     const seenBefore = me?.mine_seen_at; await refreshNotif();
     const [bk, mt] = await Promise.all([
       sb.from('bookings').select('*, trip:trips(*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio))').eq('passenger_id', user.id).order('created_at',{ascending:false}),
-      sb.from('trips').select('*, bookings(id,seats,status,paid,created_at,passenger:profiles!bookings_passenger_id_fkey(first_name,avatar_url))').eq('driver_id', user.id).gte('depart_at', new Date(Date.now()-864e5).toISOString()).order('depart_at')
+      sb.from('trips').select('*, bookings(id,seats,children,status,paid,created_at,passenger:profiles!bookings_passenger_id_fkey(first_name,avatar_url))').eq('driver_id', user.id).gte('depart_at', new Date(Date.now()-864e5).toISOString()).order('depart_at')
     ]);
     const myB = (bk.data||[]).filter(b=>b.trip);
     const plates = {}; const accIds=[...new Set(myB.filter(b=>b.status==='accepted').map(b=>b.trip.driver_id))];
@@ -220,14 +222,14 @@ async function render(){
     v.innerHTML = `<h3 style="margin:4px">Mes réservations</h3>` +
       (myB.map(b=>{ const d=b.trip.driver||{}, amt=b.trip.price*b.seats;
         return tripCard(b.trip, `<span><button class="btn small sec" onclick="openChat('${b.id}','${esc(d.first_name||'')}')">💬${unreadDot(b.id)}</button> <button class="btn small sec" onclick="cancelB('${b.id}')">Annuler</button></span>`) +
-        `<div class="card" style="margin-top:-8px"><div class="meta" style="border:0;margin:0;padding:0"><span>${STATUS[b.status]||''} · ${b.seats} pl. · <b>${eur(amt)}</b></span>
+        `<div class="card" style="margin-top:-8px"><div class="meta" style="border:0;margin:0;padding:0"><span>${STATUS[b.status]||''} · ${b.seats} pl.${b.children?` (dont ${b.children} enfant${b.children>1?'s':''})`:''} · <b>${eur(amt)}</b></span>
          ${b.paid ? '<span class="tag t-ok">💳 Payé</span>' : b.status==='accepted' ? `<span>${d.stripe_ready?`<button class="btn small" onclick="payCard('${b.id}',this)">💳 Carte</button> `:''}${d.paypal_me?`<a class="btn small ${d.stripe_ready?'sec':''}" href="${payLink(d.paypal_me, amt)}" target="_blank" rel="noopener">PayPal</a>`:''}</span>` : ''}</div>
          ${b.status==='accepted' && (plates[b.trip.driver_id]||carText(d)) ? `<div class="note">🚗 Ton véhicule : <b>${carText(d)||'—'}</b>${plates[b.trip.driver_id]?` · plaque <b>${esc(plates[b.trip.driver_id])}</b>`:''}</div>` : ''}
          <div class="hint">${b.status==='pending' ? 'Le conducteur doit accepter ta demande.' : b.status==='refused' ? 'Le conducteur a refusé cette demande.' : b.paid ? 'Paiement reçu, merci ! Bon trajet 🚗' : payText(d)}</div></div>`;
       }).join('') || '<div class="empty">Aucune réservation.</div>') +
       `<h3 style="margin:16px 4px 4px">Mes trajets proposés</h3>` +
       ((mt.data||[]).map(t => tripCard({...t, driver:me}, `<button class="btn small sec" onclick="delTrip('${t.id}')">Supprimer</button>`) +
-        (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${b.seats} pl.${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Payé</span>':''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${esc(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}</div>` : '')
+        (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${b.seats} pl.${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Payé</span>':''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${esc(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}</div>` : '')
       ).join('') || '<div class="empty">Aucun trajet proposé.</div>');
     if(notif.new_bookings||notif.responses){ await sb.rpc('mark_mine_seen'); if(me) me.mine_seen_at=new Date().toISOString(); refreshNotif(); }
   }
@@ -305,7 +307,7 @@ cgu: `<h2>Conditions générales d'utilisation</h2>
 <li>chaque conducteur est limité à 4 trajets publiés par jour.</li></ul>
 <p>Covoit' Andelys n'est pas un transporteur : le trajet est réalisé sous la seule responsabilité du conducteur et des passagers.</p>
 <h4>3. Compte</h4>
-<p>L'inscription est gratuite et réservée aux personnes majeures. Les informations fournies doivent être exactes. Chacun est responsable de la confidentialité de son mot de passe et de l'usage fait de son compte.</p>
+<p>L'inscription est gratuite et réservée aux personnes majeures. Un mineur ne peut pas voyager seul : il peut uniquement voyager <b>accompagné d'un adulte</b> qui réserve pour lui, en est responsable pendant tout le trajet et fournit le siège auto ou rehausseur adapté. Les informations fournies doivent être exactes. Chacun est responsable de la confidentialité de son mot de passe et de l'usage fait de son compte.</p>
 <h4>4. Engagements du conducteur</h4>
 <p>Le conducteur déclare être titulaire d'un permis de conduire valide, conduire un véhicule en bon état, assuré et à jour du contrôle technique, et respecter le Code de la route. Il vérifie auprès de son assureur que sa garantie couvre le covoiturage (c'est généralement le cas lorsqu'il n'y a pas de bénéfice).</p>
 <h4>5. Engagements du passager</h4>
@@ -368,16 +370,22 @@ function openTrip(id){
      <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)}<br>`:''}${tripOpts(t).split(' · ').join('<br>')}${carText(t.driver)?'<br><small>La plaque te sera montrée une fois ta demande acceptée.</small>':''}</div>
      ${t.meeting_point?`<div class="hint">📍 Rendez-vous : <b>${esc(t.meeting_point)}</b></div>`:''}${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}</div>
     <label>Nombre de places</label><select id="bn">${Array.from({length:left},(_,i)=>`<option>${i+1}</option>`).join('')}</select>
+    <label>👶 Dont enfants voyageant avec toi</label><select id="bk"><option value="0">Aucun</option></select>
+    <div class="hint" id="bkh" style="display:none">Un enfant voyage toujours <b>accompagné d'un adulte</b>. Pense à apporter le <b>siège auto ou rehausseur</b> adapté (obligatoire pour les moins de 10 ans).</div>
     <div class="note" id="btot"></div>
     <button class="btn" id="bgo" onclick="book('${id}')">${t.instant?'⚡ Réserver':'Demander une place'}</button><button class="btn sec" onclick="closeSheet()">Fermer</button>`);
   const tot=()=>$('#btot').innerHTML=`Total : <b>${eur(t.price*$('#bn').value)}</b>, à régler au conducteur.<br>${payText(t.driver||{})}${t.instant?'':'<br>Le conducteur doit accepter ta demande.'}`;
-  $('#bn').onchange=tot; tot();
+  const kids=()=>{const n=+$('#bn').value, k=$('#bk'), cur=Math.min(+k.value||0,n-1);
+    k.innerHTML=Array.from({length:n},(_,i)=>`<option value="${i}" ${i===cur?'selected':''}>${i?i+' enfant'+(i>1?'s':''):'Aucun'}</option>`).join('');
+    $('#bkh').style.display=cur?'':'none';};
+  $('#bk').onchange=()=>{$('#bkh').style.display=+$('#bk').value?'':'none';};
+  $('#bn').onchange=()=>{tot();kids();}; tot(); kids();
   sb.rpc('driver_stats',{d:t.driver_id}).then(({data})=>{ const el=$('#dstats'); if(!el||!data) return;
     const since=data.since?new Date(data.since).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}):'';
     el.textContent=`Membre depuis ${since} · ${data.trips} trajet${data.trips>1?'s':''} effectué${data.trips>1?'s':''} · ${data.passengers} passager${data.passengers>1?'s':''}`; });
 }
 let bookInstant=false;
-async function book(id){$('#bgo').disabled=true;const {error}=await sb.from('bookings').insert({trip_id:id,seats:+$('#bn').value});
+async function book(id){$('#bgo').disabled=true;const {error}=await sb.from('bookings').insert({trip_id:id,seats:+$('#bn').value,children:+($('#bk')?.value||0)});
   if(error){$('#bgo').disabled=false;return toast(errMsg(error));} closeSheet(); toast(bookInstant?'Place réservée ✅':'Demande envoyée ⏳ Le conducteur va te répondre'); go('mine');}
 async function respond(id, ok){const {error}=await sb.rpc('respond_booking',{b:id,accept:ok}); if(error)return toast(errMsg(error)); toast(ok?'Passager accepté ✅':'Demande refusée'); render();}
 async function cancelB(id){const {error}=await sb.from('bookings').delete().eq('id',id); if(error)return toast(errMsg(error)); toast('Réservation annulée'); render();}

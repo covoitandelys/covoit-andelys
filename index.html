@@ -88,14 +88,38 @@ const PLACES = {"Les Andelys":[49.246,1.411],"Vernon":[49.093,1.485],"Gare de Ve
  "Romilly-sur-Andelle":[49.333,1.267],"Charleval":[49.375,1.384],"Le Neubourg":[49.151,0.910],"Évreux – Gare":[49.019,1.141],
  "Bonnières-sur-Seine (78)":[49.035,1.578],"Mantes-la-Jolie (78)":[48.990,1.717],"Gare de Mantes-la-Jolie (78)":[48.989,1.703],
  "Magny-en-Vexin (95)":[49.155,1.786],"Elbeuf (76)":[49.287,1.008],"Incarville":[49.236,1.183],"Gare de Val-de-Reuil":[49.264,1.214]};
+try{ Object.assign(PLACES, JSON.parse(localStorage.getItem('covoit_places')||'{}')); }catch(e){}
 const NAMES = Object.keys(PLACES).sort((a,b)=>a.localeCompare(b,'fr'));
+const DEPTS = ['27','76','78','95','60','28','14','61'];
+const placeName = c => c.codeDepartement==='27' ? c.nom : `${c.nom} (${c.codeDepartement})`;
+function rememberPlace(n, lat, lon){ PLACES[n]=[lat,lon]; try{ const m=JSON.parse(localStorage.getItem('covoit_places')||'{}'); m[n]=[lat,lon]; localStorage.setItem('covoit_places',JSON.stringify(m)); }catch(e){} }
+async function geoSearch(q){
+  q=q.replace(/\s*\(\d+\)\s*$/,'').trim(); if(q.length<2) return [];
+  try{ const r=await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(q)}&fields=nom,codeDepartement,centre&boost=population&limit=25`);
+    const list=(await r.json()).filter(c=>DEPTS.includes(c.codeDepartement)&&c.centre).slice(0,8);
+    list.forEach(c=>rememberPlace(placeName(c), c.centre.coordinates[1], c.centre.coordinates[0])); return list.map(placeName);
+  }catch(e){ return []; } }
+// Trouve les coordonnées d'un nom tapé (liste connue, sinon recherche officielle)
+async function resolvePlace(v){
+  v=(v||'').trim(); if(!v) return '';
+  if(PLACES[v]) return v;
+  const k=Object.keys(PLACES).find(n=>n.toLowerCase()===v.toLowerCase()); if(k) return k;
+  const found=await geoSearch(v); const exact=found.find(n=>n.toLowerCase().replace(/\s*\(\d+\)$/,'')===v.toLowerCase().replace(/\s*\(\d+\)$/,''));
+  return exact || found[0] || null; }
+// Champ de saisie d'une commune avec suggestions
+const placeInput = (id, val, ph) => `<input id="${id}" list="dl_${id}" value="${esc(val||'')}" placeholder="${ph||'Tape une commune'}" autocomplete="off" autocapitalize="words"><datalist id="dl_${id}">${NAMES.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`;
+function wirePlace(id, onPick){ const el=$('#'+id); if(!el) return; let tmr;
+  el.addEventListener('input',()=>{ clearTimeout(tmr); tmr=setTimeout(async()=>{ const res=await geoSearch(el.value); if(!res.length) return;
+    const dl=$('#dl_'+id); const have=new Set([...dl.options].map(o=>o.value)); res.forEach(n=>{ if(!have.has(n)){ const o=document.createElement('option'); o.value=n; dl.prepend(o);} }); },300); });
+  el.addEventListener('change',async()=>{ if(!el.value.trim()){ onPick&&onPick(''); return; } const r=await resolvePlace(el.value);
+    if(r){ el.value=r; onPick&&onPick(r); } else toast('Commune introuvable : choisis-la dans les suggestions'); }); }
 const FUEL = 2.34, CONSO = 6, BAREME = 0.636, MAX_DAY = 4;
 const COLORS = ['#0f766e','#7c3aed','#db2777','#ea580c','#2563eb','#16a34a'];
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eur = n => Number(n).toFixed(2).replace('.', ',') + ' €';
-function km(a,b){const [la1,lo1]=PLACES[a],[la2,lo2]=PLACES[b],r=Math.PI/180;
+function km(a,b){if(!PLACES[a]||!PLACES[b]) return 0; const [la1,lo1]=PLACES[a],[la2,lo2]=PLACES[b],r=Math.PI/180;
  const d=2*6371*Math.asin(Math.sqrt(Math.sin((la2-la1)*r/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin((lo2-lo1)*r/2)**2));return Math.max(1,Math.round(d*1.3));}
 const fuelCost = (a,b) => km(a,b)*CONSO/100*FUEL;
 const suggested = (a,b,s) => Math.max(0.5, Math.round(fuelCost(a,b)/(s+1)*2)/2);
@@ -197,13 +221,14 @@ async function render(){
 
   if (tab==='search'){
     v.innerHTML = `<div class="card"><h3>Où allez-vous ?</h3>
-     <label>Départ</label><select id="ff">${opts(filter.from,'Partout')}</select>
+     <label>Départ</label>${placeInput('ff',filter.from,'Partout')}
      <button class="link" onclick="[filter.from,filter.to]=[filter.to,filter.from];render()">⇅ Inverser</button>
-     <label style="margin-top:0">Arrivée</label><select id="ft">${opts(filter.to,'Partout')}</select>
+     <label style="margin-top:0">Arrivée</label>${placeInput('ft',filter.to,'Partout')}
      <label>Date</label><input type="date" id="fd" value="${filter.date}" min="${today()}">
      <div class="chips"><button class="chip${filter.women?' on':''}" onclick="filter.women=!filter.women;render()">♀ Trajets entre femmes</button><button class="chip${filter.verified?' on':''}" onclick="filter.verified=!filter.verified;render()">✓ Conducteurs vérifiés</button><button class="chip${filter.soon?' on':''}" onclick="filter.soon=!filter.soon;render()">⏱ Dans les 2 h</button><button class="chip" onclick="filter={from:'',to:'',date:''};render()">Tout afficher</button></div></div>
      <div id="list"><div class="empty">Chargement des trajets…</div></div>`;
-    ['ff','ft','fd'].forEach(id=>$('#'+id).onchange=()=>{filter={...filter,from:$('#ff').value,to:$('#ft').value,date:$('#fd').value};render();});
+    wirePlace('ff',v=>{filter={...filter,from:v};render();}); wirePlace('ft',v=>{filter={...filter,to:v};render();});
+    $('#fd').onchange=()=>{filter={...filter,date:$('#fd').value};render();};
     let q = sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count)').gte('depart_at', new Date(Date.now()-15*6e4).toISOString()).order('depart_at').limit(100);
     if (filter.from) q = q.eq('from_place', filter.from);
     if (filter.to) q = q.eq('to_place', filter.to);
@@ -217,14 +242,15 @@ async function render(){
     $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
       (data.map(t=>tripCard(t, user && t.driver_id===user.id ? '<span style="color:var(--m)">Ton trajet</span>' : undefined)).join('') ||
        `<div class="empty">Aucun trajet pour l'instant.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`) +
-      `<button class="btn sec" style="margin-top:12px" onclick="openAlert()">🔔 Me prévenir des nouveaux trajets${filter.from||filter.to?` ${esc(filter.from||'Partout')} → ${esc(filter.to||'Partout')}`:''}</button>`;
+      `<button class="link" style="display:block;margin:14px auto 0" onclick="openFAQ()">❓ Questions fréquentes : légal, assurance, prix, installation…</button><button class="btn sec" style="margin-top:12px" onclick="openAlert()">🔔 Me prévenir des nouveaux trajets${filter.from||filter.to?` ${esc(filter.from||'Partout')} → ${esc(filter.to||'Partout')}`:''}</button>`;
   }
 
   if (tab==='offer'){
     if (!user) return needLogin(v, 'proposer un trajet');
     v.innerHTML = `<div class="card"><h3>Proposer un trajet</h3>
-     <label>Départ</label><select id="of">${opts('Les Andelys')}</select>
-     <label>Arrivée</label><select id="ot">${opts('Gare de Vernon-Giverny')}</select>
+     <label>Départ</label>${placeInput('of','Les Andelys')}
+     <label>Arrivée</label>${placeInput('ot','','Ex : Perriers-sur-Andelle, Gare de Vernon…')}
+     <div class="hint">Toutes les communes de l'Eure et des alentours : commence à taper et choisis dans la liste.</div>
      <div class="row"><div><label>Date</label><input type="date" id="od" value="${today()}" min="${today()}"></div>
      <div><label>Heure</label><input type="time" id="oh" value="${nextHour()}"></div></div>
      <div class="chips"><button class="chip" id="orc" type="button" onclick="this.classList.toggle('on');$('#orp').style.display=this.classList.contains('on')?'':'none'">🔁 Trajet régulier</button></div>
@@ -244,10 +270,11 @@ async function render(){
      <div class="note">⚖️ Covoiturage = <b>partage des frais</b>. Uniquement des trajets que tu fais <b>pour toi-même</b>, prix plafonné, ${MAX_DAY} trajets max par jour. Le trajet est toujours non-fumeur.</div>
      <button class="btn" id="pub" onclick="publish()">Publier le trajet</button></div>`;
     const upd = () => { const a=$('#of').value,b=$('#ot').value,s=+$('#os').value;
+      if (!PLACES[a]||!PLACES[b]){ $('#oh2').textContent='Choisis le départ et l\'arrivée pour calculer le prix.'; return; }
       if (a===b){ $('#oh2').textContent='Choisis deux communes différentes.'; return; }
       const p=suggested(a,b,s), mx=maxPrice(a,b,s); $('#op').value=Math.min(p,mx);
       $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>⛽ ${km(a,b)} km × ${CONSO} L/100 × ${eur(FUEL)}/L = ${eur(fuelCost(a,b))} ÷ ${s+1} occupants</small>`; };
-    ['of','ot','os'].forEach(id=>$('#'+id).onchange=upd); upd();
+    wirePlace('of',upd); wirePlace('ot',upd); $('#os').onchange=upd; upd();
   }
 
   if (tab==='mine'){
@@ -334,7 +361,7 @@ async function render(){
   }
 }
 
-const LEGAL_UPDATED = '1er novembre 2026';
+const LEGAL_UPDATED = '3 novembre 2026';
 const LEGAL = {
 mentions: `<h2>Mentions légales</h2>
 <h4>Éditeur</h4>
@@ -395,7 +422,7 @@ privacy: `<h2>Politique de confidentialité</h2>
 <h4>Pourquoi</h4>
 <p>Fournir le service (mise en relation, réservation, messagerie, paiement) – base : exécution des CGU ; assurer la sécurité et prévenir la fraude – base : intérêt légitime ; respecter nos obligations comptables et fiscales – base : obligation légale.</p>
 <h4>Qui y a accès</h4>
-<p>Les autres utilisateurs voient votre prénom, vos trajets publiés et votre badge éventuel. Les messages ne sont visibles que par le conducteur et le passager concernés. Prestataires techniques : Supabase (hébergement des données, UE), GitHub (hébergement de l'application), Stripe (paiements). Aucune donnée n'est vendue ni utilisée à des fins publicitaires.</p>
+<p>Les autres utilisateurs voient votre prénom, vos trajets publiés et votre badge éventuel. Les messages ne sont visibles que par le conducteur et le passager concernés. L'administrateur peut exceptionnellement les consulter, uniquement pour traiter un signalement ou répondre à une demande des autorités. Prestataires techniques : Supabase (hébergement des données, UE), GitHub (hébergement de l'application), Stripe (paiements), Brevo (envoi des e-mails de notification, UE). Aucune donnée n'est vendue ni utilisée à des fins publicitaires.</p>
 <h4>Durée de conservation</h4>
 <p>Tant que le compte est actif, puis suppression dans un délai de 3 ans après la dernière activité. Les données de paiement sont conservées par Stripe et par Covoit' Andelys pendant la durée légale (10 ans pour les pièces comptables).</p>
 <h4>Vos droits</h4>
@@ -404,12 +431,14 @@ privacy: `<h2>Politique de confidentialité</h2>
 <p>L'application n'utilise pas de cookies publicitaires ni de traceurs. Seules les données techniques nécessaires à la connexion sont enregistrées sur votre appareil.</p>`
 };
 function openLegal(k){sheet(`<div class="legal">${LEGAL[k]}</div><button class="btn sec" onclick="closeSheet()">Fermer</button>`);$('#sheet').scrollTop=0;}
-function legalLinks(){return `<div class="hint" style="text-align:center;margin:18px 0 6px"><button class="link" onclick="openLegal('cgu')">CGU</button> · <button class="link" onclick="openLegal('privacy')">Confidentialité</button> · <button class="link" onclick="openLegal('mentions')">Mentions légales</button></div>`;}
+function legalLinks(){return `<div class="hint" style="text-align:center;margin:18px 0 6px"><button class="link" onclick="openFAQ()">FAQ</button> · <button class="link" onclick="openLegal('cgu')">CGU</button> · <button class="link" onclick="openLegal('privacy')">Confidentialité</button> · <button class="link" onclick="openLegal('mentions')">Mentions légales</button></div>`;}
 
+const FAQ = [["Est-ce légal ?", "Oui. Le covoiturage est défini par la loi (article L3132-1 du Code des transports) : le conducteur fait un trajet <b>pour lui-même</b> et partage seulement les frais, <b>sans bénéfice</b>. L'appli plafonne donc les prix au barème kilométrique divisé par le nombre d'occupants, et limite chaque conducteur à 4 trajets par jour."], ["Les passagers sont-ils assurés ?", "Oui. L'assurance auto obligatoire du conducteur (responsabilité civile) couvre ses passagers en covoiturage, tant qu'il ne fait que partager les frais. C'est la position de la DGCCRF (economie.gouv.fr). Le badge ✓ Vérifié indique que nous avons contrôlé le permis et l'assurance du conducteur."], ["C'est comme un taxi ?", "Non. Un taxi ou un VTC transporte des clients contre rémunération. Ici, le conducteur fait son propre trajet et propose ses places libres pour partager l'essence. Il ne gagne pas d'argent."], ["Combien ça coûte ?", "L'inscription est gratuite. Le prix d'une place est fixé par le conducteur, plafonné par la loi (souvent 1 à 4 € pour un trajet local). Payé en espèces ou par PayPal : aucun frais. Payé par carte dans l'appli : +10 % de frais de service (minimum 0,50 €)."], ["Comment installer l'appli sur Android ou iPhone ?", "Pas besoin du Play Store. <b>Android</b> : ouvre le lien dans Chrome → Profil → 📲 Installer l'appli (ou menu ⋮ → Installer l'application). <b>iPhone</b> : ouvre le lien dans Safari → bouton Partager ⬆️ → « Sur l'écran d'accueil »."], ["Comment être prévenu ?", "Profil → 🔔 Activer les notifications. Tu reçois une alerte pour les demandes, réponses, messages et nouveaux trajets. Tu peux aussi créer une <b>alerte trajet</b> (ex : Les Andelys → Vernon le matin)."], ["Ma commune n'est pas dans la liste", "Tape simplement son nom : toutes les communes de l'Eure et des départements voisins sont proposées. Le conducteur peut aussi préciser un point de rendez-vous ou les communes traversées dans le message du trajet."], ["Comment obtenir le badge ✓ Vérifié ?", "Profil → Badge ✓ Vérifié → envoie ta pièce d'identité, ton permis et ton attestation d'assurance. Nous les contrôlons puis les supprimons dès la réponse."], ["Et si je dois annuler ?", "Annule le plus tôt possible dans Mes trajets / Mes réservations : l'autre personne est prévenue automatiquement. Pour un paiement par carte, contacte-nous pour le remboursement."], ["Un enfant peut-il voyager ?", "Oui, uniquement accompagné d'un adulte qui réserve pour lui et apporte le siège auto ou rehausseur adapté. Un mineur ne peut pas voyager seul."], ["Un problème avec un membre ?", "Utilise « 🚩 Signaler un problème » dans le chat ou sur la fiche du conducteur. En cas d'urgence, appelle le 17 ou le 112."], ["Comment vous contacter ?", "Par e-mail : covoitandelys@gmail.com, ou en message sur notre page Facebook Covoit' Andelys."]];
+function openFAQ(){ sheet(`<h2>❓ Questions fréquentes</h2>${FAQ.map(([q,a])=>`<details style="border-bottom:1px solid var(--b);padding:10px 0"><summary style="font-weight:800;cursor:pointer">${q}</summary><div class="hint" style="font-size:14px;margin-top:6px">${a}</div></details>`).join('')}<button class="btn sec" style="margin-top:14px" onclick="closeSheet()">Fermer</button>`); $('#sheet').scrollTop=0; }
 function infoCard(){return `<div class="card"><h3>Comment ça marche</h3><div class="hint" style="font-size:14px">
  1. Le conducteur publie un trajet qu'il fait déjà.<br>2. Le passager demande une place, le conducteur l'accepte, et ils échangent dans l'appli sans partager de numéro.<br>
  3. Le passager règle sa part des frais : par carte dans l'appli (+ 10 % de frais de service, min. 0,50 €), ou directement au conducteur (PayPal, espèces) sans frais.<br><br>
- Inscription <b>gratuite</b>. Le conducteur doit avoir un permis valide, une assurance et un véhicule en règle.</div></div>`;}
+ Inscription <b>gratuite</b>. Le conducteur doit avoir un permis valide, une assurance et un véhicule en règle.</div><button class="btn sec" style="margin-top:10px" onclick="openFAQ()">❓ Questions fréquentes</button></div>`;}
 function needLogin(v, what){v.innerHTML=`<div class="card"><h3>Connecte-toi</h3><div class="hint">Il faut un compte pour ${what}. C'est gratuit et rapide.</div><button class="btn" onclick="go('profile')">Créer un compte / Se connecter</button></div>`;}
 function go(t){tab=t;render();scrollTo(0,0);}
 
@@ -447,8 +476,11 @@ async function respond(id, ok){const {error}=await sb.rpc('respond_booking',{b:i
 async function cancelB(id){const {error}=await sb.from('bookings').delete().eq('id',id); if(error)return toast(errMsg(error)); toast('Réservation annulée'); render();}
 async function delTrip(id){const {error}=await sb.from('trips').delete().eq('id',id); if(error)return toast(errMsg(error)); toast('Trajet supprimé'); render();}
 async function publish(){
-  const a=$('#of').value,b=$('#ot').value,s=+$('#os').value,price=Math.max(0,+$('#op').value||0);
+  const a=await resolvePlace($('#of').value), b=await resolvePlace($('#ot').value), s=+$('#os').value, price=Math.max(0,+$('#op').value||0);
+  if(!a||!b) return toast('Choisis le départ et l\'arrivée dans les suggestions');
+  $('#of').value=a; $('#ot').value=b;
   if(a===b)return toast('Départ et arrivée identiques');
+  if(km(a,b)>200) return toast('Trajet trop long : l\'appli est faite pour les trajets locaux');
   if(price>maxPrice(a,b,s))return toast('Maximum légal : '+eur(maxPrice(a,b,s))+' par passager');
   const depart=new Date(`${$('#od').value}T${$('#oh').value}`);
   let dates=[depart];
@@ -606,13 +638,16 @@ const SLOTS={tous:'À toute heure',matin:'Le matin (5h-10h)',midi:'En journée (
 function openAlert(){
   if(!user) return go('profile');
   sheet(`<h2>🔔 Alerte trajet</h2><div class="hint">Tu reçois une notification et un e-mail dès qu'un trajet correspondant est publié.</div>
-    <label>Départ</label><select id="alf">${opts(filter.from||'Les Andelys','Partout')}</select>
-    <label>Arrivée</label><select id="alt">${opts(filter.to||'','Partout')}</select>
+    <label>Départ</label>${placeInput('alf',filter.from||'Les Andelys','Partout')}
+    <label>Arrivée</label>${placeInput('alt',filter.to||'','Partout')}
     <label>Horaire</label><select id="als">${Object.entries(SLOTS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
     <button class="btn" onclick="saveAlert(this)">Créer l'alerte</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`);
+  wirePlace('alf'); wirePlace('alt');
 }
 async function saveAlert(btn){ btn.disabled=true;
-  const {error}=await sb.from('trip_alerts').insert({from_place:$('#alf').value||null,to_place:$('#alt').value||null,slot:$('#als').value});
+  const f=$('#alf').value.trim()?await resolvePlace($('#alf').value):'', t=$('#alt').value.trim()?await resolvePlace($('#alt').value):'';
+  if(f===null||t===null){btn.disabled=false;return toast('Commune introuvable : choisis-la dans les suggestions');}
+  const {error}=await sb.from('trip_alerts').insert({from_place:f||null,to_place:t||null,slot:$('#als').value});
   if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Alerte créée 🔔'); if(tab==='profile') loadAlerts(); }
 async function loadAlerts(){ const el=$('#alerts'); if(!el) return;
   const {data}=await sb.from('trip_alerts').select('*').order('created_at');

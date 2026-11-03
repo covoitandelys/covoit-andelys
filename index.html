@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0f766e">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
 <title>Covoit' Andelys</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -44,6 +47,8 @@ nav button span{display:block;font-size:22px}nav button.on{color:var(--g)}
 .dot{display:inline-block;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;margin-left:4px}
 nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 .new{background:#fef3c7;color:#b45309}
+.stars{display:flex;gap:6px;justify-content:center;margin:10px 0}.stars button{font-size:34px;background:none;border:0;cursor:pointer;filter:grayscale(1);opacity:.45}.stars button.on{filter:none;opacity:1}
+.rate{color:#b45309;font-weight:800;font-size:13px;margin-left:4px}
 .mode{display:flex;background:rgba(255,255,255,.18);border-radius:99px;padding:4px;margin-top:14px;gap:4px}
 .mode button{flex:1;border:0;background:none;color:#fff;font:inherit;font-weight:800;font-size:15px;padding:9px 6px;border-radius:99px;cursor:pointer;position:relative}
 .mode button.on{background:#fff;color:var(--g)}.mode .dot{position:absolute;top:2px;right:10px}
@@ -99,6 +104,11 @@ const dur = k => Math.round(k*1.1+5);
 const hm = d => d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
 function dayLabel(d){const t=new Date();t.setHours(0,0,0,0);const x=new Date(d);x.setHours(0,0,0,0);const n=Math.round((x-t)/864e5);
  return n===0?"Aujourd'hui":n===1?'Demain':new Date(d).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});}
+function quickDepart(min){ const d=new Date(Date.now()+min*6e4); d.setMinutes(Math.ceil(d.getMinutes()/5)*5,0,0);
+  $('#od').value=new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10); $('#oh').value=hm(d);
+  $('#oi')?.classList.add('on'); document.querySelectorAll('.qd').forEach(b=>b.classList.toggle('on', +b.dataset.m===min));
+  toast('Départ à '+hm(d)+' · réservation instantanée activée ⚡'); }
+const soonText = d => { const m=Math.round((d-Date.now())/6e4); return m<=0?'Part maintenant':m<60?`Part dans ${m} min`:m<120?`Part dans 1 h ${String(m-60).padStart(2,'0')}`:''; };
 const nextHour = () => String((new Date().getHours()+1)%24).padStart(2,'0')+':00';
 const today = () => { const d=new Date(); return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10); };
 const av = (n, url, sz) => { const st=sz?`width:${sz}px;height:${sz}px;font-size:${Math.round(sz*0.4)}px;`:''; return url ? `<img class="av" src="${esc(url)}" alt="" style="${st}object-fit:cover">` : `<span class="av" style="${st}background:${COLORS[(n||'?').charCodeAt(0)%COLORS.length]}">${esc((n||'?')[0].toUpperCase())}</span>`; };
@@ -106,6 +116,7 @@ const LUGGAGE = {none:'🚫 Pas de bagage', small:'🎒 Petit bagage', large:'�
 const tripOpts = t => [LUGGAGE[t.luggage]||LUGGAGE.small, t.pets?'🐾 Animaux acceptés':'🐾 Pas d\'animaux', t.max2_back?'💺 Max 2 à l\'arrière':'', '🚭 Non-fumeur'].filter(Boolean).join(' · ');
 const seatsText = (left,total) => left>0 ? `👥 ${left} place${left>1?'s':''} disponible${left>1?'s':''} sur ${total}` : `👥 Complet (${total} place${total>1?'s':''})`;
 const badge = d => d?.verified ? '<span class="tag t-ok">✓ Vérifié</span>' : d?.stripe_ready ? '<span class="tag" style="background:#e0e7ff;color:#3730a3">🪪 Identité vérifiée</span>' : '';
+const stars = d => d?.rating_count ? `<span class="rate">⭐ ${String(d.rating_avg).replace('.',',')} (${d.rating_count})</span>` : '';
 const carText = d => [d?.car_model, d?.car_color].filter(Boolean).map(esc).join(' · ');
 function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',Math.max(2600,m.length*60));}
 const opts = (sel,blank) => (blank?`<option value="">${blank}</option>`:'')+NAMES.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('');
@@ -162,7 +173,7 @@ function tripCard(t, actions){
    ${t.meeting_point?`<div class="hint">📍 RDV : ${esc(t.meeting_point)}</div>`:''}
    <div class="hint" style="font-weight:700;color:${left>0?'var(--g)':'#b91c1c'}">${seatsText(left,t.seats)}</div>
    ${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}
-   <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${badge(t.driver)}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}<br><small style="color:var(--m)">${dayLabel(d)}</small></div></div>
+   <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${stars(t.driver)}${badge(t.driver)}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}${soonText(d)?`<span class="tag new">⏱ ${soonText(d)}</span>`:''}<br><small style="color:var(--m)">${dayLabel(d)}</small></div></div>
    ${actions ?? (left>0?`<button class="btn small" onclick="openTrip('${t.id}')">Réserver</button>`:'<span style="color:var(--m)">Complet</span>')}</div></div>`;
 }
 
@@ -190,21 +201,23 @@ async function render(){
      <button class="link" onclick="[filter.from,filter.to]=[filter.to,filter.from];render()">⇅ Inverser</button>
      <label style="margin-top:0">Arrivée</label><select id="ft">${opts(filter.to,'Partout')}</select>
      <label>Date</label><input type="date" id="fd" value="${filter.date}" min="${today()}">
-     <div class="chips"><button class="chip${filter.women?' on':''}" onclick="filter.women=!filter.women;render()">♀ Trajets entre femmes</button><button class="chip${filter.verified?' on':''}" onclick="filter.verified=!filter.verified;render()">✓ Conducteurs vérifiés</button><button class="chip" onclick="filter={from:'',to:'',date:''};render()">Tout afficher</button></div></div>
+     <div class="chips"><button class="chip${filter.women?' on':''}" onclick="filter.women=!filter.women;render()">♀ Trajets entre femmes</button><button class="chip${filter.verified?' on':''}" onclick="filter.verified=!filter.verified;render()">✓ Conducteurs vérifiés</button><button class="chip${filter.soon?' on':''}" onclick="filter.soon=!filter.soon;render()">⏱ Dans les 2 h</button><button class="chip" onclick="filter={from:'',to:'',date:''};render()">Tout afficher</button></div></div>
      <div id="list"><div class="empty">Chargement des trajets…</div></div>`;
     ['ff','ft','fd'].forEach(id=>$('#'+id).onchange=()=>{filter={...filter,from:$('#ff').value,to:$('#ft').value,date:$('#fd').value};render();});
-    let q = sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio)').gte('depart_at', new Date(Date.now()-15*6e4).toISOString()).order('depart_at').limit(100);
+    let q = sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count)').gte('depart_at', new Date(Date.now()-15*6e4).toISOString()).order('depart_at').limit(100);
     if (filter.from) q = q.eq('from_place', filter.from);
     if (filter.to) q = q.eq('to_place', filter.to);
     if (filter.date){ const s=new Date(filter.date+'T00:00'); q = q.gte('depart_at', s.toISOString()).lt('depart_at', new Date(s.getTime()+864e5).toISOString()); }
     if (filter.women) q = q.eq('women_only', true);
+    if (filter.soon) q = q.lt('depart_at', new Date(Date.now()+2*36e5).toISOString());
     let { data, error } = await q;
     if (!error && filter.verified) data = data.filter(t=>t.driver?.verified);
     if (error){ $('#list').innerHTML = `<div class="empty">Erreur de chargement : ${esc(error.message)}</div>`; return; }
     tripsCache = data;
     $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
       (data.map(t=>tripCard(t, user && t.driver_id===user.id ? '<span style="color:var(--m)">Ton trajet</span>' : undefined)).join('') ||
-       `<div class="empty">Aucun trajet pour l'instant.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`);
+       `<div class="empty">Aucun trajet pour l'instant.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`) +
+      `<button class="btn sec" style="margin-top:12px" onclick="openAlert()">🔔 Me prévenir des nouveaux trajets${filter.from||filter.to?` ${esc(filter.from||'Partout')} → ${esc(filter.to||'Partout')}`:''}</button>`;
   }
 
   if (tab==='offer'){
@@ -214,6 +227,11 @@ async function render(){
      <label>Arrivée</label><select id="ot">${opts('Gare de Vernon-Giverny')}</select>
      <div class="row"><div><label>Date</label><input type="date" id="od" value="${today()}" min="${today()}"></div>
      <div><label>Heure</label><input type="time" id="oh" value="${nextHour()}"></div></div>
+     <div class="chips"><button class="chip" id="orc" type="button" onclick="this.classList.toggle('on');$('#orp').style.display=this.classList.contains('on')?'':'none'">🔁 Trajet régulier</button></div>
+     <div id="orp" style="display:none" class="note">Répéter ce trajet chaque :<div class="chips">${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map((j,i)=>`<button class="chip ord${i<5?' on':''}" type="button" data-d="${(i+1)%7}" onclick="this.classList.toggle('on')">${j}</button>`).join('')}</div>
+       <label>Pendant</label><select id="orw"><option value="1">1 semaine</option><option value="2" selected>2 semaines</option><option value="4">4 semaines</option></select>
+       <div class="hint">Un trajet est publié pour chaque jour choisi, à la même heure. Tu peux en supprimer un à tout moment.</div></div>
+     <div class="chips"><span class="hint" style="align-self:center;margin:0">🚀 Je pars :</span>${[[0,'maintenant'],[15,'dans 15 min'],[30,'dans 30 min'],[60,'dans 1 h']].map(([m,l])=>`<button class="chip qd" data-m="${m}" type="button" onclick="quickDepart(${m})">${l}</button>`).join('')}</div>
      <div class="row"><div><label>Places</label><select id="os">${[1,2,3,4].map(n=>`<option ${n===3?'selected':''}>${n}</option>`).join('')}</select></div>
      <div><label>Prix / place (€)</label><input type="number" id="op" step="0.5" min="0" inputmode="decimal"></div></div>
      <div class="hint" id="oh2"></div>
@@ -237,10 +255,12 @@ async function render(){
     v.innerHTML = '<div class="empty">Chargement…</div>';
     const seenBefore = me?.mine_seen_at; await refreshNotif();
     const [bk, mt] = await Promise.all([
-      sb.from('bookings').select('*, trip:trips(*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio))').eq('passenger_id', user.id).order('created_at',{ascending:false}),
+      sb.from('bookings').select('*, trip:trips(*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count))').eq('passenger_id', user.id).order('created_at',{ascending:false}),
       sb.from('trips').select('*, bookings(id,seats,children,status,paid,created_at,passenger:profiles!bookings_passenger_id_fkey(first_name,avatar_url))').eq('driver_id', user.id).gte('depart_at', new Date(Date.now()-864e5).toISOString()).order('depart_at')
     ]);
     const myB = (bk.data||[]).filter(b=>b.trip);
+    const {data:rv} = await sb.from('reviews').select('booking_id').eq('reviewer_id', user.id); const reviewed=new Set((rv||[]).map(r=>r.booking_id));
+    const canRate = (b,t) => b.status==='accepted' && new Date(t.depart_at)<new Date() && !reviewed.has(b.id);
     const plates = {}; const accIds=[...new Set(myB.filter(b=>b.status==='accepted').map(b=>b.trip.driver_id))];
     if(accIds.length){ const {data:pl}=await sb.from('driver_private').select('user_id,car_plate').in('user_id',accIds); (pl||[]).forEach(r=>plates[r.user_id]=r.car_plate); }
     const passengerHTML = `<h3 style="margin:4px">Mes réservations</h3>` +
@@ -249,11 +269,12 @@ async function render(){
         `<div class="card" style="margin-top:-8px"><div class="meta" style="border:0;margin:0;padding:0"><span>${STATUS[b.status]||''} · ${b.seats} pl.${b.children?` (dont ${b.children} enfant${b.children>1?'s':''})`:''} · <b>${eur(amt)}</b></span>
          ${b.paid ? '<span class="tag t-ok">💳 Payé</span>' : b.status==='accepted' ? `<span>${d.stripe_ready?`<button class="btn small" onclick="payCard('${b.id}',this)">💳 Carte</button> `:''}${d.paypal_me?`<a class="btn small ${d.stripe_ready?'sec':''}" href="${payLink(d.paypal_me, amt)}" target="_blank" rel="noopener">PayPal</a>`:''}</span>` : ''}</div>
          ${b.status==='accepted' && (plates[b.trip.driver_id]||carText(d)) ? `<div class="note">🚗 Ton véhicule : <b>${carText(d)||'—'}</b>${plates[b.trip.driver_id]?` · plaque <b>${esc(plates[b.trip.driver_id])}</b>`:''}</div>` : ''}
+         ${canRate(b,b.trip)?`<button class="btn small" style="margin-top:6px" onclick="openReview('${b.id}','${esc(d.first_name||'le conducteur')}')">⭐ Noter ${esc(d.first_name||'le conducteur')}</button>`:''}
          <div class="hint">${b.status==='pending' ? 'Le conducteur doit accepter ta demande.' : b.status==='refused' ? 'Le conducteur a refusé cette demande.' : b.paid ? 'Paiement reçu, merci ! Bon trajet 🚗' : payText(d)}</div></div>`;
       }).join('') || `<div class="empty">Aucune réservation.<br><br><button class="btn sec" onclick="go('search')">Rechercher un trajet</button></div>`);
     const driverHTML = `<h3 style="margin:4px">Mes trajets proposés</h3>` +
       ((mt.data||[]).map(t => tripCard({...t, driver:me}, `<button class="btn small sec" onclick="delTrip('${t.id}')">Supprimer</button>`) +
-        (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${b.seats} pl.${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Payé</span>':''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${esc(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}</div>` : '')
+        (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${b.seats} pl.${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Payé</span>':''}${canRate(b,t)?` <button class="btn small" onclick="openReview('${b.id}','${esc(b.passenger?.first_name||'')}')">⭐ Noter</button>`:''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${esc(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}</div>` : '')
       ).join('') || `<div class="empty">Aucun trajet proposé.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`);
     v.innerHTML = mode==='driver' ? driverHTML : passengerHTML;
     if((notif.new_bookings||notif.responses) && !(mode==='passenger'&&notif.new_bookings) && !(mode==='driver'&&notif.responses)){ await sb.rpc('mark_mine_seen'); if(me) me.mine_seen_at=new Date().toISOString(); refreshNotif(); }
@@ -296,6 +317,12 @@ async function render(){
       <div class="hint">Le modèle et la couleur sont visibles sur tes trajets. La plaque n'est montrée qu'aux passagers que tu as acceptés.</div>
       <button class="btn" onclick="saveName()">Enregistrer</button>
       <div class="hint">Connecté avec ${esc(user.email)}</div></div>
+      <div class="card"><h3>🔔 Notifications &amp; appli</h3>
+        <div class="hint" id="nstate">Reçois une alerte sur ton téléphone pour les demandes, réponses, messages et nouveaux trajets.</div>
+        <button class="btn" id="nbtn" onclick="enablePush()">🔔 Activer les notifications</button>
+        <button class="btn sec" id="ibtn" onclick="installApp()">📲 Installer l'appli sur mon téléphone</button>
+        <h3 style="margin-top:16px">Mes alertes trajet</h3><div id="alerts"><div class="hint">Chargement…</div></div>
+        <button class="btn sec small" onclick="openAlert()">+ Nouvelle alerte</button></div>
       <div class="card"><h3>💳 Paiement par carte</h3>${me?.stripe_ready
         ? '<div class="note">✅ Activé : tes passagers acceptés peuvent te payer par carte. L\'argent arrive sur ton compte bancaire via Stripe.</div>'
         : `<div class="hint">Pour recevoir les paiements par carte, crée ton compte de réception Stripe (pièce d'identité + IBAN, environ 5 minutes). Gratuit pour le conducteur.</div><div class="hint" id="stst"></div><button class="btn" id="stbtn" onclick="stripeOnboard()">Activer le paiement par carte</button>`}</div>
@@ -303,7 +330,7 @@ async function render(){
       ${me?.is_admin?`<div class="card"><h3>🛠️ Administration</h3><div class="hint">Donne ou retire le badge ✓ Vérifié après avoir contrôlé la pièce d'identité, le permis et l'assurance.</div><button class="btn" onclick="openAdmin()">Demandes de badge et membres</button></div>`:''}
       ${infoCard()}<button class="btn sec" onclick="logout()">Se déconnecter</button>${legalLinks()}`;
     $('#pav').onchange=e=>{ if(e.target.files[0]) uploadAvatar(e.target.files[0]); };
-    loadVerifCard();
+    loadVerifCard(); pushState(); loadAlerts();
   }
 }
 
@@ -390,7 +417,7 @@ function openTrip(id){
   if (!user){ toast('Crée un compte pour réserver'); return go('profile'); }
   const t = tripsCache.find(x=>x.id===id), left=t.seats-t.booked, d=new Date(t.depart_at); bookInstant=t.instant;
   sheet(`<h2>${esc(t.from_place)} → ${esc(t.to_place)}</h2><div class="hint">${dayLabel(d)} à ${hm(d)} · ${t.km} km · <b style="color:var(--g)">${seatsText(left,t.seats)}</b></div>
-    <div class="card" style="box-shadow:none;border:1px solid var(--b);margin-top:12px"><div class="drv">${av(t.driver?.first_name, t.driver?.avatar_url, 56)}<div><b style="font-size:18px">${esc(t.driver?.first_name)}</b>${badge(t.driver)}<br><small class="hint" id="dstats">…</small></div></div>
+    <div class="card" style="box-shadow:none;border:1px solid var(--b);margin-top:12px"><div class="drv">${av(t.driver?.first_name, t.driver?.avatar_url, 56)}<div><b style="font-size:18px">${esc(t.driver?.first_name)}</b>${stars(t.driver)}${badge(t.driver)}<br><small class="hint" id="dstats">…</small></div></div>
      ${t.driver?.bio?`<div class="hint" style="font-style:italic">« ${esc(t.driver.bio)} »</div>`:''}
      <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)}<br>`:''}${tripOpts(t).split(' · ').join('<br>')}${carText(t.driver)?'<br><small>La plaque te sera montrée une fois ta demande acceptée.</small>':''}</div>
      ${t.meeting_point?`<div class="hint">📍 Rendez-vous : <b>${esc(t.meeting_point)}</b></div>`:''}${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}</div>
@@ -398,6 +425,7 @@ function openTrip(id){
     <label>👶 Dont enfants voyageant avec toi</label><select id="bk"><option value="0">Aucun</option></select>
     <div class="hint" id="bkh" style="display:none">Un enfant voyage toujours <b>accompagné d'un adulte</b>. Pense à apporter le <b>siège auto ou rehausseur</b> adapté (obligatoire pour les moins de 10 ans).</div>
     <div class="note" id="btot"></div>
+    <div id="drev"></div>
     <button class="btn" id="bgo" onclick="book('${id}')">${t.instant?'⚡ Réserver':'Demander une place'}</button><button class="btn sec" onclick="closeSheet()">Fermer</button>`);
   const tot=()=>$('#btot').innerHTML=`Total : <b>${eur(t.price*$('#bn').value)}</b>, à régler au conducteur.<br>${payText(t.driver||{})}${t.instant?'':'<br>Le conducteur doit accepter ta demande.'}`;
   const kids=()=>{const n=+$('#bn').value, k=$('#bk'), cur=Math.min(+k.value||0,n-1);
@@ -405,6 +433,9 @@ function openTrip(id){
     $('#bkh').style.display=cur?'':'none';};
   $('#bk').onchange=()=>{$('#bkh').style.display=+$('#bk').value?'':'none';};
   $('#bn').onchange=()=>{tot();kids();}; tot(); kids();
+  if(user) sb.from('reviews').select('rating,comment,created_at').eq('reviewee_id',t.driver_id).not('comment','is',null).order('created_at',{ascending:false}).limit(3).then(({data})=>{
+    const el=$('#drev'); if(el&&data?.length) el.innerHTML='<div class="hint" style="margin-top:8px"><b>Avis des passagers</b></div>'+data.map(r=>`<div class="hint">${'⭐'.repeat(r.rating)} « ${esc(r.comment)} »</div>`).join(''); });
+  if(user && user.id!==t.driver_id) $('#sheet').insertAdjacentHTML('beforeend',`<button class="link" style="margin-top:6px" onclick="reportUser('${t.driver_id}',null)">🚩 Signaler ce conducteur</button>`);
   sb.rpc('driver_stats',{d:t.driver_id}).then(({data})=>{ const el=$('#dstats'); if(!el||!data) return;
     const since=data.since?new Date(data.since).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}):'';
     el.textContent=`Membre depuis ${since} · ${data.trips} trajet${data.trips>1?'s':''} effectué${data.trips>1?'s':''} · ${data.passengers} passager${data.passengers>1?'s':''}`; });
@@ -420,11 +451,19 @@ async function publish(){
   if(a===b)return toast('Départ et arrivée identiques');
   if(price>maxPrice(a,b,s))return toast('Maximum légal : '+eur(maxPrice(a,b,s))+' par passager');
   const depart=new Date(`${$('#od').value}T${$('#oh').value}`);
+  let dates=[depart];
+  if($('#orc')?.classList.contains('on')){
+    const days=[...document.querySelectorAll('.ord.on')].map(x=>+x.dataset.d); if(!days.length) return toast('Choisis au moins un jour');
+    dates=[]; const n=(+$('#orw').value)*7;
+    for(let i=0;i<n;i++){ const d=new Date(depart); d.setDate(depart.getDate()+i); if(days.includes(d.getDay()) && d>new Date()) dates.push(d); }
+    if(!dates.length) return toast('Aucune date à venir pour ces jours');
+  }
   $('#pub').disabled=true;
-  const {error}=await sb.from('trips').insert({from_place:a,to_place:b,depart_at:depart.toISOString(),seats:s,km:km(a,b),price,
+  const base={from_place:a,to_place:b,seats:s,km:km(a,b),price,
     note:$('#on').value.trim(),women_only:$('#ow').classList.contains('on'),instant:$('#oi').classList.contains('on'),luggage:$('#olg').value,
-    pets:$('#opt').classList.contains('on'),max2_back:$('#om2').classList.contains('on'),meeting_point:$('#omp').value.trim()});
-  $('#pub').disabled=false; if(error)return toast(errMsg(error)); toast('Trajet publié 🚗'); go('mine');
+    pets:$('#opt').classList.contains('on'),max2_back:$('#om2').classList.contains('on'),meeting_point:$('#omp').value.trim()};
+  const {error}=await sb.from('trips').insert(dates.map(d=>({...base,depart_at:d.toISOString()})));
+  $('#pub').disabled=false; if(error)return toast(errMsg(error)); toast(dates.length>1?`${dates.length} trajets publiés 🔁`:'Trajet publié 🚗'); go('mine');
 }
 async function callFn(body){
   const {data,error}=await sb.functions.invoke('stripe-v2',{body});
@@ -515,22 +554,104 @@ async function reviewVerif(uid,ok,btn){
   toast(ok?'Membre vérifié ✅ Documents supprimés':'Demande refusée, documents supprimés'); loadVerifQueue(); $('#aq')?.oninput?.();
 }
 async function openAdmin(){
-  sheet('<h2>🛠️ Administration</h2><h3>Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
+  sheet('<h2>🛠️ Administration</h2><h3>🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
   const {data,error}=await sb.rpc('admin_list_users'); if(error){ $('#alist').innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   const draw=()=>{ const q=($('#aq').value||'').toLowerCase(); const rows=(data||[]).filter(u=>!q||(u.first_name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q));
     $('#alist').innerHTML=`<div class="hint">${rows.length} membre${rows.length>1?'s':''}</div>`+rows.map(u=>`<div class="meta"><span style="display:flex;align-items:center">${av(u.first_name,u.avatar_url)}<span><b>${esc(u.first_name||'—')}</b>${u.verified?'<span class="tag t-ok">✓</span>':''}<br><small style="color:var(--m)">${esc(u.email||'')}${u.car_model?' · 🚗 '+esc(u.car_model):''}${u.stripe_ready?' · 💳':''}</small></span></span>
       <button class="btn small ${u.verified?'sec':''}" onclick="setVerified('${u.uid}',${!u.verified},this)">${u.verified?'Retirer':'✓ Vérifier'}</button></div>`).join(''); };
-  $('#aq').oninput=draw; draw(); openAdmin._data=data; loadVerifQueue();
+  $('#aq').oninput=draw; draw(); openAdmin._data=data; loadVerifQueue(); loadReports();
 }
 async function setVerified(id,v,btn){ btn.disabled=true; const {error}=await sb.rpc('admin_set_verified',{target:id,v}); if(error){btn.disabled=false;return toast(errMsg(error));}
   const u=(openAdmin._data||[]).find(x=>x.uid===id); if(u) u.verified=v; if(id===user.id) me.verified=v; toast(v?'Badge ✓ Vérifié attribué':'Badge retiré'); $('#aq').oninput(); }
+
+/* ======== Notifications push & installation ======== */
+const VAPID_PUBLIC = 'BJia9at-iq50E19jBzEqJGQObS3Y6qHSmv44eUAcS-fxxoEjs-0EQD2NvMzhEdGl6OvQNE-jVvj6tOnPqIlerEQ';
+const b64ToU8 = s => { const p=(s+'==='.slice((s.length+3)%4)).replace(/-/g,'+').replace(/_/g,'/'); return Uint8Array.from(atob(p),c=>c.charCodeAt(0)); };
+let swReg=null, installEvt=null;
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(r=>{swReg=r;}).catch(()=>{});
+addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); installEvt=e; });
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+async function pushState(){
+  const st=$('#nstate'), bt=$('#nbtn'), ib=$('#ibtn'); if(!st) return;
+  if(isStandalone() && ib) ib.style.display='none';
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+    st.innerHTML = isIOS() && !isStandalone() ? 'Sur iPhone : installe d\'abord l\'appli (bouton ci-dessous), puis ouvre-la depuis l\'écran d\'accueil pour activer les notifications.' : 'Ton navigateur ne permet pas les notifications.';
+    bt.style.display='none'; return; }
+  const reg = swReg || await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription();
+  if(sub && Notification.permission==='granted'){ st.innerHTML='✅ Notifications activées sur cet appareil.'; bt.textContent='🔕 Désactiver les notifications'; bt.className='btn sec'; bt.onclick=disablePush; }
+  else if(Notification.permission==='denied'){ st.innerHTML='Les notifications sont bloquées. Autorise-les dans les réglages du navigateur (🔒 à gauche de l\'adresse → Notifications).'; bt.style.display='none'; }
+}
+async function enablePush(){
+  try{
+    const perm = await Notification.requestPermission(); if(perm!=='granted') return toast('Notifications refusées');
+    const reg = swReg || await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64ToU8(VAPID_PUBLIC)});
+    const j = sub.toJSON(); const {error}=await sb.rpc('save_push_sub',{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
+    if(error) throw error; toast('Notifications activées 🔔'); pushState();
+  }catch(e){ toast('Impossible d\'activer : '+(e.message||e)); }
+}
+async function disablePush(){ const reg=swReg||await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription();
+  if(sub){ await sb.rpc('remove_push_sub',{p_endpoint:sub.endpoint}); await sub.unsubscribe(); } toast('Notifications désactivées'); render(); }
+async function installApp(){
+  if(installEvt){ installEvt.prompt(); const r=await installEvt.userChoice; installEvt=null; if(r.outcome==='accepted') toast('Appli installée 📲'); return; }
+  sheet(`<h2>📲 Installer l'appli</h2>${isIOS()
+    ? '<p>Sur <b>iPhone</b> (avec Safari) :</p><ol><li>Touche le bouton <b>Partager</b> ⬆️ en bas de l\'écran</li><li>Choisis <b>« Sur l\'écran d\'accueil »</b></li><li>Touche <b>Ajouter</b></li></ol><p>Ouvre ensuite l\'appli depuis l\'icône pour activer les notifications.</p>'
+    : '<p>Sur <b>Android</b> (avec Chrome) :</p><ol><li>Touche les <b>3 points ⋮</b> en haut à droite</li><li>Choisis <b>« Installer l\'application »</b> ou <b>« Ajouter à l\'écran d\'accueil »</b></li></ol>'}
+    <button class="btn sec" onclick="closeSheet()">Fermer</button>`);
+}
+
+/* ======== Alertes trajet ======== */
+const SLOTS={tous:'À toute heure',matin:'Le matin (5h-10h)',midi:'En journée (10h-14h)',soir:'Le soir (14h-22h)'};
+function openAlert(){
+  if(!user) return go('profile');
+  sheet(`<h2>🔔 Alerte trajet</h2><div class="hint">Tu reçois une notification et un e-mail dès qu'un trajet correspondant est publié.</div>
+    <label>Départ</label><select id="alf">${opts(filter.from||'Les Andelys','Partout')}</select>
+    <label>Arrivée</label><select id="alt">${opts(filter.to||'','Partout')}</select>
+    <label>Horaire</label><select id="als">${Object.entries(SLOTS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+    <button class="btn" onclick="saveAlert(this)">Créer l'alerte</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`);
+}
+async function saveAlert(btn){ btn.disabled=true;
+  const {error}=await sb.from('trip_alerts').insert({from_place:$('#alf').value||null,to_place:$('#alt').value||null,slot:$('#als').value});
+  if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Alerte créée 🔔'); if(tab==='profile') loadAlerts(); }
+async function loadAlerts(){ const el=$('#alerts'); if(!el) return;
+  const {data}=await sb.from('trip_alerts').select('*').order('created_at');
+  el.innerHTML=(data||[]).map(a=>`<div class="meta"><span>${esc(a.from_place||'Partout')} → ${esc(a.to_place||'Partout')}<br><small class="hint">${SLOTS[a.slot]}</small></span><button class="btn small sec" onclick="delAlert(${a.id})">Supprimer</button></div>`).join('')||'<div class="hint">Aucune alerte. Crée-en une pour être prévenu des nouveaux trajets.</div>'; }
+async function delAlert(id){ await sb.from('trip_alerts').delete().eq('id',id); loadAlerts(); }
+
+/* ======== Avis ======== */
+function openReview(bid, name){
+  sheet(`<h2>⭐ Noter ${esc(name)}</h2><div class="hint">Ton avis aide toute la communauté. Il est visible par les membres.</div>
+    <div class="stars" id="rst">${[1,2,3,4,5].map(n=>`<button type="button" data-n="${n}" onclick="[...this.parentNode.children].forEach(b=>b.classList.toggle('on',+b.dataset.n<=${n}));this.parentNode.dataset.v=${n}">⭐</button>`).join('')}</div>
+    <label>Commentaire (facultatif)</label><textarea id="rcm" maxlength="300" rows="3" placeholder="Ponctuel, sympa, conduite agréable…"></textarea>
+    <button class="btn" onclick="sendReview('${bid}',this)">Envoyer mon avis</button><button class="btn sec" onclick="closeSheet()">Plus tard</button>`);
+}
+async function sendReview(bid,btn){ const r=+($('#rst').dataset.v||0); if(!r) return toast('Choisis une note de 1 à 5 étoiles');
+  btn.disabled=true; const {error}=await sb.rpc('leave_review',{b:bid,r,c:$('#rcm').value});
+  if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Merci pour ton avis ⭐'); render(); }
+
+/* ======== Signalement ======== */
+function reportUser(target, bid){
+  sheet(`<h2>🚩 Signaler un problème</h2><div class="hint">Ton signalement est envoyé à l'équipe Covoit' Andelys, qui le traitera rapidement. En cas d'urgence, appelle le 17 ou le 112.</div>
+    <label>Motif</label><select id="rpm"><option>Comportement inapproprié</option><option>Conduite dangereuse</option><option>Absent au rendez-vous</option><option>Demande d'argent en plus</option><option>Faux profil</option><option>Autre</option></select>
+    <label>Explique en quelques mots</label><textarea id="rpt" maxlength="800" rows="4"></textarea>
+    <button class="btn" onclick="sendReport(${target?`'${target}'`:'null'},${bid?`'${bid}'`:'null'},this)">Envoyer le signalement</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`);
+}
+async function sendReport(target,bid,btn){ const reason=$('#rpm').value+' : '+$('#rpt').value.trim(); if($('#rpt').value.trim().length<3) return toast('Explique le problème en quelques mots');
+  btn.disabled=true; const {error}=await sb.rpc('report_user',{p_target:target,p_booking:bid,p_reason:reason});
+  if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Signalement envoyé. Merci 🙏'); }
+async function loadReports(){ const el=$('#rqueue'); if(!el) return; const {data,error}=await sb.rpc('admin_list_reports');
+  if(error){el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`;return;}
+  el.innerHTML=(data||[]).map(r=>`<div class="meta"><span><b>${esc(r.reporter||'?')}</b> → <b>${esc(r.target||'?')}</b><br><small class="hint">${new Date(r.created_at).toLocaleString('fr-FR')}</small><br>${esc(r.reason)}</span><button class="btn small sec" onclick="closeReport(${r.id})">Traité</button></div>`).join('')||'<div class="hint">Aucun signalement en attente.</div>'; }
+async function closeReport(id){ await sb.rpc('admin_close_report',{rid:id}); loadReports(); }
+
 async function logout(){await sb.auth.signOut();user=null;me=null;toast('Déconnecté');go('search');}
 
 async function openChat(bid, other){
   sheet(`<h2>💬 ${esc(other||'Conversation')}</h2><div class="hint">Échangez ici le point de rendez-vous. Ne partagez pas d'informations sensibles.</div>
     <div class="msgs" id="msgs"><div class="hint">Chargement…</div></div>
     <div class="row"><input id="mtx" placeholder="Ton message" maxlength="1000"><button class="btn small" style="flex:none" id="msend">Envoyer</button></div>
-    <button class="btn sec" onclick="closeSheet()">Fermer</button>`);
+    <button class="btn sec" onclick="closeSheet()">Fermer</button><button class="link" style="margin-top:6px" onclick="reportUser(null,'${bid}')">🚩 Signaler un problème</button>`);
   let lastMarked='';
   const load=async()=>{const [{data},{data:readAt}]=await Promise.all([sb.from('messages').select('*').eq('booking_id',bid).order('created_at'), sb.rpc('other_read_at',{b:bid})]);
     const box=$('#msgs'); if(!box)return; const atEnd=box.scrollHeight-box.scrollTop-box.clientHeight<40;

@@ -47,6 +47,9 @@ nav button span{display:block;font-size:22px}nav button.on{color:var(--g)}
 .dot{display:inline-block;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;margin-left:4px}
 nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 .new{background:#fef3c7;color:#b45309}
+.roles{display:grid;gap:10px;margin:14px 0}.role{display:flex;gap:12px;align-items:center;text-align:left;border:2px solid var(--b);background:#fff;border-radius:16px;padding:14px;font:inherit;cursor:pointer}.role b{display:block;font-size:17px}.role span.e{font-size:30px}.role small{color:var(--m)}
+.todo{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--b)}.todo .ic{font-size:22px;width:30px;text-align:center}.todo .tx{flex:1}.todo .tx small{display:block;color:var(--m)}.todo.done .tx b{text-decoration:line-through;color:var(--m)}
+.bar{height:10px;border-radius:99px;background:#e5e7eb;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:var(--g);border-radius:99px}
 .stars{display:flex;gap:6px;justify-content:center;margin:10px 0}.stars button{font-size:34px;background:none;border:0;cursor:pointer;filter:grayscale(1);opacity:.45}.stars button.on{filter:none;opacity:1}
 .rate{color:#b45309;font-weight:800;font-size:13px;margin-left:4px}
 .mode{display:flex;background:rgba(255,255,255,.18);border-radius:99px;padding:4px;margin-top:14px;gap:4px}
@@ -324,11 +327,11 @@ async function render(){
         const r = login ? await sb.auth.signInWithPassword({email,password}) : await sb.auth.signUp({email,password,options:{data:{first_name:fn,cgu_accepted_at:new Date().toISOString(),cgu_version:LEGAL_UPDATED}}});
         $('#ago').disabled=false; if(r.error)return toast(errMsg(r.error));
         if(!r.data.session){toast('Vérifie ta boîte mail pour confirmer ton compte');return;}
-        await loadMe(); toast(login?'Connecté ✅':'Bienvenue '+fn+' 🎉'); render();};
+        await loadMe(); toast(login?'Connecté ✅':'Bienvenue '+fn+' 🎉'); render(); maybeWelcome();};
       return;
     }
     const {data:dp}=await sb.from('driver_private').select('car_plate').eq('user_id',user.id).maybeSingle(); const myPlate=dp?.car_plate||'';
-    v.innerHTML = `<div class="card"><h3>Mon profil</h3>
+    v.innerHTML = `<div id="progress"></div><div class="card"><h3>Mon profil</h3>
       <div style="display:flex;align-items:center;gap:14px;margin-top:6px">${(me?.avatar_url?`<img src="${esc(me.avatar_url)}" style="width:64px;height:64px;border-radius:50%;object-fit:cover">`:av(me?.first_name, null, 64))}
         <div><label class="btn small sec" style="display:inline-block;margin:0">📷 ${me?.avatar_url?'Changer':'Ajouter'} ma photo<input type="file" id="pav" accept="image/*" style="display:none"></label>
         ${me?.avatar_url?'<br><button class="link" onclick="removeAvatar()">Retirer la photo</button>':'<div class="hint" style="margin-top:4px">Facultatif, rassure les passagers.</div>'}</div></div>
@@ -357,7 +360,7 @@ async function render(){
       ${me?.is_admin?`<div class="card"><h3>🛠️ Administration</h3><div class="hint">Donne ou retire le badge ✓ Vérifié après avoir contrôlé la pièce d'identité, le permis et l'assurance.</div><button class="btn" onclick="openAdmin()">Demandes de badge et membres</button></div>`:''}
       ${infoCard()}<button class="btn sec" onclick="logout()">Se déconnecter</button>${legalLinks()}`;
     $('#pav').onchange=e=>{ if(e.target.files[0]) uploadAvatar(e.target.files[0]); };
-    loadVerifCard(); pushState(); loadAlerts();
+    loadVerifCard(); pushState(); loadAlerts(); loadProgress();
   }
 }
 
@@ -680,6 +683,65 @@ async function loadReports(){ const el=$('#rqueue'); if(!el) return; const {data
   el.innerHTML=(data||[]).map(r=>`<div class="meta"><span><b>${esc(r.reporter||'?')}</b> → <b>${esc(r.target||'?')}</b><br><small class="hint">${new Date(r.created_at).toLocaleString('fr-FR')}</small><br>${esc(r.reason)}</span><button class="btn small sec" onclick="closeReport(${r.id})">Traité</button></div>`).join('')||'<div class="hint">Aucun signalement en attente.</div>'; }
 async function closeReport(id){ await sb.rpc('admin_close_report',{rid:id}); loadReports(); }
 
+
+/* ======== Accueil des nouveaux membres & profil à compléter ======== */
+const welcomeKey = () => 'covoit_welcome_' + (user?.id||'');
+function maybeWelcome(){ try{ if(user && me && !localStorage.getItem(welcomeKey())) setTimeout(openWelcome, 600); }catch(e){} }
+function openWelcome(){
+  sheet(`<h2>Bienvenue ${esc(me?.first_name||'')} 👋</h2>
+    <div class="hint">Covoit' Andelys, c'est le covoiturage du quotidien entre voisins. Tu l'utiliseras plutôt…</div>
+    <div class="roles">
+      <button class="role" onclick="welcomeRole('driver')"><span class="e">🚗</span><span><b>Comme conducteur</b><small>Je fais des trajets réguliers et je propose mes places libres</small></span></button>
+      <button class="role" onclick="welcomeRole('passenger')"><span class="e">🧍</span><span><b>Comme passager</b><small>Je cherche une voiture pour mes déplacements</small></span></button>
+      <button class="role" onclick="welcomeRole('both')"><span class="e">🔄</span><span><b>Les deux</b><small>Ça dépend des jours</small></span></button>
+    </div><button class="link" onclick="welcomeRole(null)">Plus tard</button>`);
+}
+function welcomeRole(r){
+  try{ localStorage.setItem(welcomeKey(), r||'later'); }catch(e){}
+  if(!r){ closeSheet(); return; }
+  try{ localStorage.setItem('covoit_role_'+user.id, r); }catch(e){}
+  mode = r==='passenger' ? 'passenger' : 'driver'; try{localStorage.setItem('covoit_mode',mode)}catch(e){}
+  openChecklist(r);
+}
+const myRole = () => { try{ return localStorage.getItem('covoit_role_'+user?.id) || (mode==='driver'?'driver':'passenger'); }catch(e){ return 'passenger'; } };
+async function checklistItems(role){
+  const notifOn = ('Notification' in window) && Notification.permission==='granted';
+  const items=[];
+  if(role!=='passenger'){
+    const {count:nt} = await sb.from('trips').select('id',{count:'exact',head:true}).eq('driver_id',user.id);
+    items.push(
+      {ic:'🚗', t:'Ajouter mon véhicule', d:'Modèle et couleur : les passagers te reconnaissent', ok:!!me?.car_model, go:"closeSheet();go('profile');setTimeout(()=>$('#pcm')?.scrollIntoView({block:'center'}),400)"},
+      {ic:'🔁', t:'Publier mon trajet habituel', d:'Un « trajet régulier » couvre toute la semaine en une fois', ok:(nt||0)>0, go:"closeSheet();setMode('driver')"},
+      {ic:'🪪', t:'Obtenir le badge Vérifié', d:'Les passagers réservent plus volontiers. Documents supprimés après contrôle', ok:!!me?.verified, go:"closeSheet();go('profile');setTimeout(()=>$('#vcard')?.scrollIntoView({block:'center'}),600)"});
+  }
+  if(role!=='driver'){
+    const {count:na} = await sb.from('trip_alerts').select('id',{count:'exact',head:true});
+    items.push({ic:'🔔', t:'Créer une alerte trajet', d:'Sois prévenu dès qu\'un trajet correspond', ok:(na||0)>0, go:"closeSheet();openAlert()"});
+  }
+  items.push(
+    {ic:'📷', t:'Ajouter une photo', d:'Facultatif, mais ça rassure', ok:!!me?.avatar_url, go:"closeSheet();go('profile')"},
+    {ic:'📳', t:'Activer les notifications', d:'Demandes, réponses et messages en direct', ok:notifOn, go:"closeSheet();go('profile');setTimeout(enablePush,500)"},
+    {ic:'📲', t:'Installer l\'appli', d:'Une icône sur ton écran d\'accueil', ok:isStandalone(), go:"closeSheet();installApp()"});
+  return items;
+}
+async function openChecklist(role){
+  role = role || myRole();
+  sheet('<h2>Pour bien démarrer</h2><div class="hint">Chargement…</div>');
+  const items = await checklistItems(role); const done = items.filter(i=>i.ok).length;
+  sheet(`<h2>${role==='passenger'?'🧍 Pour trouver un trajet':'🚗 Pour trouver des passagers'}</h2>
+    <div class="hint">${done}/${items.length} étapes faites</div><div class="bar"><i style="width:${Math.round(done/items.length*100)}%"></i></div>
+    ${items.map(i=>`<div class="todo ${i.ok?'done':''}"><span class="ic">${i.ok?'✅':i.ic}</span><span class="tx"><b>${i.t}</b><small>${i.d}</small></span>${i.ok?'':`<button class="btn small" onclick="${i.go}">Faire</button>`}</div>`).join('')}
+    <button class="btn sec" style="margin-top:14px" onclick="closeSheet();render()">C'est noté</button>`);
+}
+async function loadProgress(){
+  const el=$('#progress'); if(!el||!user) return;
+  const items = await checklistItems(myRole()); const done=items.filter(i=>i.ok).length, pct=Math.round(done/items.length*100);
+  if(pct===100){ el.innerHTML=''; return; }
+  el.innerHTML=`<div class="card"><h3>Ton profil est complété à ${pct} %</h3><div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="hint">Plus ton profil est complet, plus tu trouveras ${myRole()==='passenger'?'facilement un trajet':'de passagers'}.</div>
+    <button class="btn small" onclick="openChecklist()">Voir ce qu'il reste (${items.length-done})</button></div>`;
+}
+
 async function logout(){await sb.auth.signOut();user=null;me=null;toast('Déconnecté');go('search');}
 
 async function openChat(bid, other){
@@ -703,7 +765,7 @@ async function openChat(bid, other){
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
-(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); })();
+(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); })();
 </script>
 </body>
 </html>

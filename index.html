@@ -200,7 +200,7 @@ function tripCard(t, actions){
    ${t.meeting_point?`<div class="hint">📍 RDV : ${esc(t.meeting_point)}</div>`:''}
    <div class="hint" style="font-weight:700;color:${left>0?'var(--g)':'#b91c1c'}">${seatsText(left,t.seats)}</div>
    ${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}
-   <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${stars(t.driver)}${badge(t.driver)}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}${soonText(d)?`<span class="tag new">⏱ ${soonText(d)}</span>`:''}<br><small style="color:var(--m)">${dayLabel(d)}</small></div></div>
+   <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${stars(t.driver)}${badge(t.driver)||(t.driver&&t.driver.first_name?'<span class="tag" style="background:#f3f4f6;color:#6b7280">Profil non vérifié</span>':'')}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}${soonText(d)?`<span class="tag new">⏱ ${soonText(d)}</span>`:''}<br><small style="color:var(--m)">${dayLabel(d)}</small></div></div>
    ${actions ?? (left>0?`<button class="btn small" onclick="openTrip('${t.id}')">Réserver</button>`:'<span style="color:var(--m)">Complet</span>')}</div></div>`;
 }
 
@@ -271,6 +271,7 @@ async function render(){
      <button class="chip" id="oi" onclick="this.classList.toggle('on')">⚡ Réservation instantanée</button><button class="chip" id="ow" onclick="this.classList.toggle('on')">♀ Réservé aux femmes</button></div>
      <div class="hint">Sans « instantanée », tu reçois une demande et tu acceptes ou refuses chaque passager.</div>
      <div class="note">⚖️ Covoiturage = <b>partage des frais</b>. Uniquement des trajets que tu fais <b>pour toi-même</b>, prix plafonné, ${MAX_DAY} trajets max par jour. Le trajet est toujours non-fumeur.</div>
+     ${me?.verified?'':`<div class="note warn">🪪 <b>Ton profil n'est pas encore vérifié.</b> Tes trajets affichent « Profil non vérifié » : les passagers réservent bien plus volontiers avec un conducteur ✓ Vérifié. <button class="link" onclick="go('profile');setTimeout(()=>$('#vcard')?.scrollIntoView({block:'center'}),600)">Obtenir le badge (2 min)</button></div>`}
      <button class="btn" id="pub" onclick="publish()">Publier le trajet</button></div>`;
     const upd = () => { const a=$('#of').value,b=$('#ot').value,s=+$('#os').value;
       if (!PLACES[a]||!PLACES[b]){ $('#oh2').textContent='Choisis le départ et l\'arrivée pour calculer le prix.'; return; }
@@ -501,6 +502,12 @@ async function publish(){
     pets:$('#opt').classList.contains('on'),max2_back:$('#om2').classList.contains('on'),meeting_point:$('#omp').value.trim()};
   const {error}=await sb.from('trips').insert(dates.map(d=>({...base,depart_at:d.toISOString()})));
   $('#pub').disabled=false; if(error)return toast(errMsg(error)); toast(dates.length>1?`${dates.length} trajets publiés 🔁`:'Trajet publié 🚗'); go('mine');
+  if(!me?.verified){ const {data:vr}=await sb.from('verif_requests').select('status').eq('user_id',user.id).maybeSingle();
+    if(!vr||vr.status==='refused') setTimeout(()=>sheet(`<h2>Bravo, ton trajet est en ligne ! 🚗</h2>
+      <div class="hint">Dernière étape pour trouver des passagers plus facilement : le <b>badge ✓ Vérifié</b>.</div>
+      <div class="note">📄 Envoie ta pièce d'identité, ton permis et ton attestation d'assurance. Nous les contrôlons rapidement, puis ils sont <b>supprimés</b>. Tes trajets n'afficheront plus « Profil non vérifié ».</div>
+      <button class="btn" onclick="closeSheet();go('profile');setTimeout(()=>$('#vcard')?.scrollIntoView({block:'center'}),600)">✓ Obtenir mon badge</button>
+      <button class="btn sec" onclick="closeSheet()">Plus tard</button>`),900); }
 }
 async function callFn(body){
   const {data,error}=await sb.functions.invoke('stripe-v2',{body});

@@ -359,7 +359,7 @@ async function render(){
         : `<div class="hint">Pour recevoir les paiements par carte, crée ton compte de réception Stripe (pièce d'identité + IBAN, environ 5 minutes). Gratuit pour le conducteur.</div><div class="hint" id="stst"></div><button class="btn" id="stbtn" onclick="stripeOnboard()">Activer le paiement par carte</button>`}</div>
       <div class="card" id="vcard"><h3>🪪 Badge ✓ Vérifié</h3><div class="hint">Chargement…</div></div>
       ${me?.is_admin?`<div class="card"><h3>🛠️ Administration</h3><div class="hint">Donne ou retire le badge ✓ Vérifié après avoir contrôlé la pièce d'identité, le permis et l'assurance.</div><button class="btn" onclick="openAdmin()">Demandes de badge et membres</button></div>`:''}
-      ${infoCard()}<button class="btn sec" onclick="logout()">Se déconnecter</button>${legalLinks()}`;
+      ${infoCard()}${fbButton()}<button class="btn sec" onclick="logout()">Se déconnecter</button>${legalLinks()}`;
     $('#pav').onchange=e=>{ if(e.target.files[0]) uploadAvatar(e.target.files[0]); };
     loadVerifCard(); pushState(); loadAlerts(); loadProgress();
   }
@@ -435,7 +435,7 @@ privacy: `<h2>Politique de confidentialité</h2>
 <p>L'application n'utilise pas de cookies publicitaires ni de traceurs. Seules les données techniques nécessaires à la connexion sont enregistrées sur votre appareil.</p>`
 };
 function openLegal(k){sheet(`<div class="legal">${LEGAL[k]}</div><button class="btn sec" onclick="closeSheet()">Fermer</button>`);$('#sheet').scrollTop=0;}
-function legalLinks(){return `<div class="hint" style="text-align:center;margin:18px 0 6px"><button class="link" onclick="openFAQ()">FAQ</button> · <button class="link" onclick="openLegal('cgu')">CGU</button> · <button class="link" onclick="openLegal('privacy')">Confidentialité</button> · <button class="link" onclick="openLegal('mentions')">Mentions légales</button></div>`;}
+function legalLinks(){return `<div class="hint" style="text-align:center;margin:18px 0 6px"><button class="link" onclick="openFAQ()">FAQ</button> · <button class="link" onclick="openFB()">Facebook</button> · <button class="link" onclick="openLegal('cgu')">CGU</button> · <button class="link" onclick="openLegal('privacy')">Confidentialité</button> · <button class="link" onclick="openLegal('mentions')">Mentions légales</button></div>`;}
 
 const FAQ = [["Est-ce légal ?", "Oui. Le covoiturage est défini par la loi (article L3132-1 du Code des transports) : le conducteur fait un trajet <b>pour lui-même</b> et partage seulement les frais, <b>sans bénéfice</b>. L'appli plafonne donc les prix au barème kilométrique divisé par le nombre d'occupants, et limite chaque conducteur à 4 trajets par jour."], ["Les passagers sont-ils assurés ?", "Oui. L'assurance auto obligatoire du conducteur (responsabilité civile) couvre ses passagers en covoiturage, tant qu'il ne fait que partager les frais. C'est la position de la DGCCRF (economie.gouv.fr). Le badge ✓ Vérifié indique que nous avons contrôlé le permis et l'assurance du conducteur."], ["C'est comme un taxi ?", "Non. Un taxi ou un VTC transporte des clients contre rémunération. Ici, le conducteur fait son propre trajet et propose ses places libres pour partager l'essence. Il ne gagne pas d'argent."], ["Combien ça coûte ?", "L'inscription est gratuite. Le prix d'une place est fixé par le conducteur, plafonné par la loi (souvent 1 à 4 € pour un trajet local). Payé en espèces ou par PayPal : aucun frais. Payé par carte dans l'appli : +10 % de frais de service (minimum 0,50 €)."], ["Comment installer l'appli sur Android ou iPhone ?", "Pas besoin du Play Store. <b>Android</b> : ouvre le lien dans Chrome → Profil → 📲 Installer l'appli (ou menu ⋮ → Installer l'application). <b>iPhone</b> : ouvre le lien dans Safari → bouton Partager ⬆️ → « Sur l'écran d'accueil »."], ["Comment être prévenu ?", "Profil → 🔔 Activer les notifications. Tu reçois une alerte pour les demandes, réponses, messages et nouveaux trajets. Tu peux aussi créer une <b>alerte trajet</b> (ex : Les Andelys → Vernon le matin)."], ["Ma commune n'est pas dans la liste", "Tape simplement son nom : toutes les communes de l'Eure et des départements voisins sont proposées. Le conducteur peut aussi préciser un point de rendez-vous ou les communes traversées dans le message du trajet."], ["Comment obtenir le badge ✓ Vérifié ?", "Profil → Badge ✓ Vérifié → envoie ta pièce d'identité, ton permis et ton attestation d'assurance. Nous les contrôlons puis les supprimons dès la réponse."], ["Et si je dois annuler ?", "Annule le plus tôt possible dans Mes trajets / Mes réservations : l'autre personne est prévenue automatiquement. Pour un paiement par carte, contacte-nous pour le remboursement."], ["Un enfant peut-il voyager ?", "Oui, uniquement accompagné d'un adulte qui réserve pour lui et apporte le siège auto ou rehausseur adapté. Un mineur ne peut pas voyager seul."], ["Un problème avec un membre ?", "Utilise « 🚩 Signaler un problème » dans le chat ou sur la fiche du conducteur. En cas d'urgence, appelle le 17 ou le 112."], ["Comment vous contacter ?", "Par e-mail : covoitandelys@gmail.com, ou en message sur notre page Facebook Covoit' Andelys."]];
 function openFAQ(){ sheet(`<h2>❓ Questions fréquentes</h2>${FAQ.map(([q,a])=>`<details style="border-bottom:1px solid var(--b);padding:10px 0"><summary style="font-weight:800;cursor:pointer">${q}</summary><div class="hint" style="font-size:14px;margin-top:6px">${a}</div></details>`).join('')}<button class="btn sec" style="margin-top:14px" onclick="closeSheet()">Fermer</button>`); $('#sheet').scrollTop=0; }
@@ -475,7 +475,8 @@ function openTrip(id){
 }
 let bookInstant=false;
 async function book(id){$('#bgo').disabled=true;const {error}=await sb.from('bookings').insert({trip_id:id,seats:+$('#bn').value,children:+($('#bk')?.value||0)});
-  if(error){$('#bgo').disabled=false;return toast(errMsg(error));} closeSheet(); toast(bookInstant?'Place réservée ✅':'Demande envoyée ⏳ Le conducteur va te répondre'); go('mine');}
+  if(error){$('#bgo').disabled=false;return toast(errMsg(error));} closeSheet(); toast(bookInstant?'Place réservée ✅':'Demande envoyée ⏳ Le conducteur va te répondre'); go('mine');
+  if(!fbAsked()) setTimeout(()=>sheet(`<h2>Merci ! 🙏</h2><div class="hint">Covoit' Andelys grandit grâce au bouche-à-oreille. Suis notre page Facebook et partage-la à tes voisins et collègues : plus on est nombreux, plus il y a de trajets.</div>${fbButton()}<button class="btn sec" onclick="try{localStorage.setItem('covoit_fb','later')}catch(e){};closeSheet()">Plus tard</button>`),1500);}
 async function respond(id, ok){const {error}=await sb.rpc('respond_booking',{b:id,accept:ok}); if(error)return toast(errMsg(error)); toast(ok?'Passager accepté ✅':'Demande refusée'); render();}
 async function cancelB(id){const {error}=await sb.from('bookings').delete().eq('id',id); if(error)return toast(errMsg(error)); toast('Réservation annulée'); render();}
 async function delTrip(id){const {error}=await sb.from('trips').delete().eq('id',id); if(error)return toast(errMsg(error)); toast('Trajet supprimé'); render();}
@@ -686,6 +687,11 @@ async function closeReport(id){ await sb.rpc('admin_close_report',{rid:id}); loa
 
 
 /* ======== Accueil des nouveaux membres & profil à compléter ======== */
+const FB_URL = 'https://www.facebook.com/share/1FZ1LfJeSh/';
+function openFB(){ try{ localStorage.setItem('covoit_fb','1'); }catch(e){} window.open(FB_URL,'_blank'); }
+const fbDone = () => { try{ return localStorage.getItem('covoit_fb')==='1'; }catch(e){ return false; } };
+const fbAsked = () => { try{ return !!localStorage.getItem('covoit_fb'); }catch(e){ return true; } };
+const fbButton = () => `<button class="btn sec" style="background:#e7f0ff;color:#1d4ed8" onclick="openFB()">👍 Suis-nous sur Facebook</button>`;
 const welcomeKey = () => 'covoit_welcome_' + (user?.id||'');
 function maybeWelcome(){ try{ if(user && me && !localStorage.getItem(welcomeKey())) setTimeout(openWelcome, 600); }catch(e){} }
 function openWelcome(){
@@ -722,7 +728,8 @@ async function checklistItems(role){
   items.push(
     {ic:'📷', t:'Ajouter une photo', d:'Facultatif, mais ça rassure', ok:!!me?.avatar_url, go:"closeSheet();go('profile')"},
     {ic:'📳', t:'Activer les notifications', d:'Demandes, réponses et messages en direct', ok:notifOn, go:"closeSheet();go('profile');setTimeout(enablePush,500)"},
-    {ic:'📲', t:'Installer l\'appli', d:'Une icône sur ton écran d\'accueil', ok:isStandalone(), go:"closeSheet();installApp()"});
+    {ic:'📲', t:'Installer l\'appli', d:'Une icône sur ton écran d\'accueil', ok:isStandalone(), go:"closeSheet();installApp()"},
+    {ic:'👍', t:'Suivre la page Facebook', d:'Nouveautés, trajets et entraide du coin', ok:fbDone(), go:"openFB();closeSheet()"});
   return items;
 }
 async function openChecklist(role){

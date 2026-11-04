@@ -250,7 +250,7 @@ async function render(){
 
   if (tab==='offer'){
     if (!user) return needLogin(v, 'proposer un trajet');
-    v.innerHTML = `<div class="card"><h3>Proposer un trajet</h3>
+    v.innerHTML = `<div id="demand"></div><div class="card"><h3>Proposer un trajet</h3>
      <label>Départ</label>${placeInput('of','Les Andelys')}
      <label>Arrivée</label>${placeInput('ot','','Ex : Perriers-sur-Andelle, Gare de Vernon…')}
      <div class="hint">Toutes les communes de l'Eure et des alentours : commence à taper et choisis dans la liste.</div>
@@ -275,9 +275,10 @@ async function render(){
     const upd = () => { const a=$('#of').value,b=$('#ot').value,s=+$('#os').value;
       if (!PLACES[a]||!PLACES[b]){ $('#oh2').textContent='Choisis le départ et l\'arrivée pour calculer le prix.'; return; }
       if (a===b){ $('#oh2').textContent='Choisis deux communes différentes.'; return; }
+      const dm=demandFor(a,b);
       const p=suggested(a,b,s), mx=maxPrice(a,b,s); $('#op').value=Math.min(p,mx);
-      $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>⛽ ${km(a,b)} km × ${CONSO} L/100 × ${eur(FUEL)}/L = ${eur(fuelCost(a,b))} ÷ ${s+1} occupants</small>`; };
-    wirePlace('of',upd); wirePlace('ot',upd); $('#os').onchange=upd; upd();
+      $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>⛽ ${km(a,b)} km × ${CONSO} L/100 × ${eur(FUEL)}/L = ${eur(fuelCost(a,b))} ÷ ${s+1} occupants</small>${dm?`<br><b style="color:var(--g)">🙋 ${dm} passager${dm>1?'s':''} ${dm>1?'cherchent':'cherche'} ce trajet : ${dm>1?'ils seront prévenus':'il sera prévenu'} si l'horaire correspond !</b>`:''}`; };
+    wirePlace('of',upd); wirePlace('ot',upd); $('#os').onchange=upd; upd(); loadDemand().then(upd);
   }
 
   if (tab==='mine'){
@@ -740,6 +741,26 @@ async function loadProgress(){
   el.innerHTML=`<div class="card"><h3>Ton profil est complété à ${pct} %</h3><div class="bar"><i style="width:${pct}%"></i></div>
     <div class="hint">Plus ton profil est complet, plus tu trouveras ${myRole()==='passenger'?'facilement un trajet':'de passagers'}.</div>
     <button class="btn small" onclick="openChecklist()">Voir ce qu'il reste (${items.length-done})</button></div>`;
+}
+
+
+/* ======== Demande des passagers (alertes, anonyme) ======== */
+let demandCache=[];
+const SLOT_TXT={matin:'le matin',midi:'en journée',soir:'le soir',tous:'à toute heure'};
+function demandFor(a,b){ return demandCache.filter(d=>(!d.from_place||d.from_place===a)&&(!d.to_place||d.to_place===b)).reduce((n,d)=>n+Number(d.n),0); }
+function useDemand(i){ const d=demandCache[i]; if(!d) return;
+  if(d.from_place){ $('#of').value=d.from_place; } if(d.to_place){ $('#ot').value=d.to_place; }
+  $('#of').dispatchEvent(new Event('change')); $('#ot').dispatchEvent(new Event('change'));
+  const h={matin:'07:30',midi:'12:00',soir:'17:30'}[d.slot]; if(h) $('#oh').value=h;
+  $('#ot').scrollIntoView({block:'center'}); toast(d.to_place&&d.from_place?'Trajet prérempli : vérifie la date et l\'heure':'Complète l\'autre commune'); }
+async function loadDemand(){
+  const {data}=await sb.rpc('alert_demand'); demandCache=(data||[]).filter(d=>d.from_place||d.to_place);
+  const el=$('#demand'); if(!el) return;
+  const top=demandCache.slice(0,5); if(!top.length){ el.innerHTML=''; return; }
+  const total=demandCache.reduce((n,d)=>n+Number(d.n),0);
+  el.innerHTML=`<div class="card" style="border:2px solid var(--g)"><h3>🙋 Des passagers cherchent un conducteur</h3>
+    <div class="hint">${total} alerte${total>1?'s':''} active${total>1?'s':''}. Publie l'un de ces trajets : ils seront prévenus aussitôt.</div>
+    ${top.map((d,i)=>`<div class="meta"><span><b>${esc(d.from_place||'Partout')} → ${esc(d.to_place||'Partout')}</b><br><small class="hint">${SLOT_TXT[d.slot]||''} · ${d.n} passager${d.n>1?'s':''}</small></span><button class="btn small" onclick="useDemand(${i})">Proposer</button></div>`).join('')}</div>`;
 }
 
 async function logout(){await sb.auth.signOut();user=null;me=null;toast('Déconnecté');go('search');}

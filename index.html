@@ -125,7 +125,9 @@ const eur = n => Number(n).toFixed(2).replace('.', ',') + ' €';
 function km(a,b){if(!PLACES[a]||!PLACES[b]) return 0; const [la1,lo1]=PLACES[a],[la2,lo2]=PLACES[b],r=Math.PI/180;
  const d=2*6371*Math.asin(Math.sqrt(Math.sin((la2-la1)*r/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin((lo2-lo1)*r/2)**2));return Math.max(1,Math.round(d*1.3));}
 const fuelCost = (a,b) => km(a,b)*CONSO/100*FUEL;
-const suggested = (a,b,s) => Math.max(0.5, Math.round(fuelCost(a,b)/(s+1)*2)/2);
+const MIN_PRICE = 1;
+const suggested = (a,b,s) => Math.max(MIN_PRICE, Math.round(fuelCost(a,b)/(s+1)*2)/2);
+const minPrice = (a,b,s) => Math.min(MIN_PRICE, maxPrice(a,b,s));
 const maxPrice = (a,b,s) => Math.floor(km(a,b)*BAREME/(s+1)*2)/2;
 const dur = k => Math.round(k*1.1+5);
 const hm = d => d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
@@ -168,7 +170,7 @@ const configured = !SUPABASE_URL.startsWith('COLLE');
 const sb = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 let notif = {new_bookings:0, unread:{}};
 let mode = (()=>{try{return localStorage.getItem('covoit_mode')||'passenger'}catch(e){return 'passenger'}})();
-let user = null, me = null, tab = mode==='driver' ? 'offer' : 'search', filter = {from:'Les Andelys', to:'', date:''}, chatTimer = null;
+let user = null, me = null, tab = mode==='driver' ? 'offer' : 'search', filter = {from:'', to:'', date:'', period:'7'}, chatTimer = null;
 
 async function loadMe(){
   const { data:{ session } } = await sb.auth.getSession();
@@ -223,12 +225,17 @@ async function render(){
   if (!configured){ v.innerHTML = `<div class="card"><h3>Configuration manquante</h3><div class="hint">Colle l'adresse et la clé de ton projet Supabase en haut du fichier <b>index.html</b> (lignes « COLLE_ICI »).</div></div>`; return; }
 
   if (tab==='search'){
+    const PER=[['today',"Aujourd'hui"],['tomorrow','Demain'],['7','7 jours'],['all','Tout']];
+    const nf=[filter.women,filter.verified,filter.soon,filter.date,filter.avail].filter(Boolean).length;
     v.innerHTML = `<div class="card"><h3>Où allez-vous ?</h3>
-     <label>Départ</label>${placeInput('ff',filter.from,'Partout')}
+     <div class="row"><div><label>Départ</label>${placeInput('ff',filter.from,'Partout')}</div><div><label>Arrivée</label>${placeInput('ft',filter.to,'Partout')}</div></div>
      <button class="link" onclick="[filter.from,filter.to]=[filter.to,filter.from];render()">⇅ Inverser</button>
-     <label style="margin-top:0">Arrivée</label>${placeInput('ft',filter.to,'Partout')}
-     <label>Date</label><input type="date" id="fd" value="${filter.date}" min="${today()}">
-     <div class="chips"><button class="chip${filter.women?' on':''}" onclick="filter.women=!filter.women;render()">♀ Trajets entre femmes</button><button class="chip${filter.verified?' on':''}" onclick="filter.verified=!filter.verified;render()">✓ Conducteurs vérifiés</button><button class="chip${filter.soon?' on':''}" onclick="filter.soon=!filter.soon;render()">⏱ Dans les 2 h</button><button class="chip" onclick="filter={from:'',to:'',date:''};render()">Tout afficher</button></div></div>
+     <div class="chips">${PER.map(([k,l])=>`<button class="chip${!filter.date&&filter.period===k?' on':''}" onclick="filter.date='';filter.period='${k}';render()">${l}</button>`).join('')}
+       <button class="chip${nf?' on':''}" onclick="filter.more=!filter.more;render()">⚙️ Filtres${nf?` (${nf})`:''}</button></div>
+     <div id="fmore" style="display:${filter.more?'':'none'}">
+       <label>Date précise</label><input type="date" id="fd" value="${filter.date}" min="${today()}">
+       <div class="chips"><button class="chip${filter.avail?' on':''}" onclick="filter.avail=!filter.avail;render()">👥 Places libres</button><button class="chip${filter.soon?' on':''}" onclick="filter.soon=!filter.soon;render()">⏱ Dans les 2 h</button><button class="chip${filter.verified?' on':''}" onclick="filter.verified=!filter.verified;render()">✓ Conducteurs vérifiés</button><button class="chip${filter.women?' on':''}" onclick="filter.women=!filter.women;render()">♀ Trajets entre femmes</button></div></div>
+     ${filter.from||filter.to||nf?`<button class="link" onclick="filter={from:'',to:'',date:'',period:'7'};render()">✕ Tout afficher</button>`:''}</div>
      <div id="list"><div class="empty">Chargement des trajets…</div></div>`;
     wirePlace('ff',v=>{filter={...filter,from:v};render();}); wirePlace('ft',v=>{filter={...filter,to:v};render();});
     $('#fd').onchange=()=>{filter={...filter,date:$('#fd').value};render();};
@@ -236,15 +243,22 @@ async function render(){
     if (filter.from) q = q.eq('from_place', filter.from);
     if (filter.to) q = q.eq('to_place', filter.to);
     if (filter.date){ const s=new Date(filter.date+'T00:00'); q = q.gte('depart_at', s.toISOString()).lt('depart_at', new Date(s.getTime()+864e5).toISOString()); }
+    else if (filter.period!=='all'){ const d0=new Date(); d0.setHours(0,0,0,0);
+      const start=filter.period==='tomorrow'?new Date(d0.getTime()+864e5):null, end=new Date(d0.getTime()+({today:1,tomorrow:2,'7':8}[filter.period]||8)*864e5);
+      if(start) q=q.gte('depart_at',start.toISOString()); q=q.lt('depart_at',end.toISOString()); }
     if (filter.women) q = q.eq('women_only', true);
     if (filter.soon) q = q.lt('depart_at', new Date(Date.now()+2*36e5).toISOString());
     let { data, error } = await q;
     if (!error && filter.verified) data = data.filter(t=>t.driver?.verified);
+    if (!error && filter.avail) data = data.filter(t=>t.seats-t.booked>0);
+    // Trajets réguliers : on n'affiche que la prochaine date (sauf si une date précise est choisie)
+    const others={}; if(!error && !filter.date){ const seen={}; data=data.filter(t=>{ const k=[t.driver_id,t.from_place,t.to_place,hm(new Date(t.depart_at))].join('|');
+      if(seen[k]){ others[seen[k]]=(others[seen[k]]||0)+1; return false; } seen[k]=t.id; return true; }); }
     if (error){ $('#list').innerHTML = `<div class="empty">Erreur de chargement : ${esc(error.message)}</div>`; return; }
     tripsCache = data;
     $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
-      (data.map(t=>tripCard(t, user && t.driver_id===user.id ? '<span style="color:var(--m)">Ton trajet</span>' : undefined)).join('') ||
-       `<div class="empty">Aucun trajet pour l'instant.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`) +
+      (data.map(t=>tripCard(t, user && t.driver_id===user.id ? '<span style="color:var(--m)">Ton trajet</span>' : undefined).replace('<div class="meta">',others[t.id]?`<div class="hint" style="font-weight:700">🔁 Trajet régulier : aussi ${others[t.id]} autre${others[t.id]>1?'s':''} date${others[t.id]>1?'s':''} à la même heure</div><div class="meta">`:'<div class="meta">')).join('') ||
+       `<div class="empty">Aucun trajet ${filter.period!=='all'&&!filter.date?'sur cette période':'pour l\'instant'}.${filter.period!=='all'&&!filter.date?`<br><button class="link" onclick="filter.period='all';render()">Voir tous les trajets à venir</button>`:''}<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`) +
       `<button class="link" style="display:block;margin:14px auto 0" onclick="openFAQ()">❓ Questions fréquentes : légal, assurance, prix, installation…</button><button class="btn sec" style="margin-top:12px" onclick="openAlert()">🔔 Me prévenir des nouveaux trajets${filter.from||filter.to?` ${esc(filter.from||'Partout')} → ${esc(filter.to||'Partout')}`:''}</button>`;
   }
 
@@ -278,7 +292,7 @@ async function render(){
       if (a===b){ $('#oh2').textContent='Choisis deux communes différentes.'; return; }
       const dm=demandFor(a,b);
       const p=suggested(a,b,s), mx=maxPrice(a,b,s); $('#op').value=Math.min(p,mx);
-      $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>⛽ ${km(a,b)} km × ${CONSO} L/100 × ${eur(FUEL)}/L = ${eur(fuelCost(a,b))} ÷ ${s+1} occupants</small>${dm?`<br><b style="color:var(--g)">🙋 ${dm} passager${dm>1?'s':''} ${dm>1?'cherchent':'cherche'} ce trajet : ${dm>1?'ils seront prévenus':'il sera prévenu'} si l'horaire correspond !</b>`:''}`; };
+      $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · minimum <b>${eur(minPrice(a,b,s))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>⛽ ${km(a,b)} km × ${CONSO} L/100 × ${eur(FUEL)}/L = ${eur(fuelCost(a,b))} ÷ ${s+1} occupants</small>${dm?`<br><b style="color:var(--g)">🙋 ${dm} passager${dm>1?'s':''} ${dm>1?'cherchent':'cherche'} ce trajet : ${dm>1?'ils seront prévenus':'il sera prévenu'} si l'horaire correspond !</b>`:''}`; };
     wirePlace('of',upd); wirePlace('ot',upd); $('#os').onchange=upd; upd(); loadDemand().then(upd);
   }
 
@@ -366,7 +380,7 @@ async function render(){
   }
 }
 
-const LEGAL_UPDATED = '3 novembre 2026';
+const LEGAL_UPDATED = '5 novembre 2026';
 const LEGAL = {
 mentions: `<h2>Mentions légales</h2>
 <h4>Éditeur</h4>
@@ -378,7 +392,9 @@ Directeur de la publication : Peter JEAN JOSEPH.</p>
 <h4>Hébergement</h4>
 <p>Application : GitHub Inc. (GitHub Pages), 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, États-Unis.<br>
 Base de données et comptes : Supabase Inc., serveurs situés dans l'Union européenne.<br>
-Paiements par carte : Stripe Payments Europe Ltd, 1 Grand Canal Street Lower, Dublin 2, Irlande.</p>`,
+Paiements par carte : Stripe Payments Europe Ltd, 1 Grand Canal Street Lower, Dublin 2, Irlande.</p>
+<h4>Médiation de la consommation</h4>
+<p>Conformément aux articles L.611-1 et suivants du Code de la consommation, après une réclamation écrite préalable restée sans réponse satisfaisante (covoitandelys@gmail.com), le consommateur peut recourir gratuitement au médiateur : CM2C – Centre de la Médiation de la Consommation de Conciliateurs de justice, 49 rue de Ponthieu, 75008 Paris – <a href="https://www.cm2c.net" target="_blank" rel="noopener">www.cm2c.net</a> – 01 89 47 00 14.</p>`,
 
 cgu: `<h2>Conditions générales d'utilisation</h2>
 <p class="hint">Dernière mise à jour : ${LEGAL_UPDATED}</p>
@@ -412,7 +428,7 @@ cgu: `<h2>Conditions générales d'utilisation</h2>
 <h4>11. Données personnelles</h4>
 <p>Voir la politique de confidentialité, accessible depuis l'application.</p>
 <h4>12. Modification et droit applicable</h4>
-<p>Ces conditions peuvent évoluer ; la version en vigueur est celle affichée dans l'application. Elles sont soumises au droit français. En cas de litige, une solution amiable est recherchée en priorité (covoitandelys@gmail.com). Le consommateur peut recourir gratuitement à un médiateur de la consommation.</p>`,
+<p>Ces conditions peuvent évoluer ; la version en vigueur est celle affichée dans l'application. Elles sont soumises au droit français. En cas de litige, une solution amiable est recherchée en priorité (covoitandelys@gmail.com). Après une réclamation écrite préalable, le consommateur peut recourir gratuitement au médiateur de la consommation : CM2C – Centre de la Médiation de la Consommation de Conciliateurs de justice, 49 rue de Ponthieu, 75008 Paris – <a href="https://www.cm2c.net" target="_blank" rel="noopener">www.cm2c.net</a> – 01 89 47 00 14. Le consommateur peut aussi saisir le tribunal compétent.</p>`,
 
 privacy: `<h2>Politique de confidentialité</h2>
 <p class="hint">Dernière mise à jour : ${LEGAL_UPDATED}</p>
@@ -488,6 +504,7 @@ async function publish(){
   if(a===b)return toast('Départ et arrivée identiques');
   if(km(a,b)>200) return toast('Trajet trop long : l\'appli est faite pour les trajets locaux');
   if(price>maxPrice(a,b,s))return toast('Maximum légal : '+eur(maxPrice(a,b,s))+' par passager');
+  if(price<minPrice(a,b,s))return toast('Prix minimum : '+eur(minPrice(a,b,s))+' par passager');
   const depart=new Date(`${$('#od').value}T${$('#oh').value}`);
   let dates=[depart];
   if($('#orc')?.classList.contains('on')){

@@ -617,8 +617,9 @@ async function reviewVerif(uid,ok,btn){
 async function openAdmin(){
   sheet('<h2>🛠️ Administration</h2><h3>🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
   const {data,error}=await sb.rpc('admin_list_users'); if(error){ $('#alist').innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
+  await loadMailStats();
   const draw=()=>{ const q=($('#aq').value||'').toLowerCase(); const rows=(data||[]).filter(u=>!q||(u.first_name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q));
-    $('#alist').innerHTML=`<div class="hint">${rows.length} membre${rows.length>1?'s':''}</div>`+rows.map(u=>`<div class="meta"><span style="display:flex;align-items:center">${av(u.first_name,u.avatar_url)}<span><b>${esc(u.first_name||'—')}</b>${u.verified?'<span class="tag t-ok">✓</span>':''}<br><small style="color:var(--m)"><a href="${mailTo([u.email],u.first_name)}" style="color:var(--g)">✉️ ${esc(u.email||'')}</a>${u.car_model?' · 🚗 '+esc(u.car_model):''}${u.stripe_ready?' · 💳':''}</small></span></span>
+    $('#alist').innerHTML=`<div class="hint">${rows.length} membre${rows.length>1?'s':''}</div>`+rows.map(u=>`<div class="meta"><span style="display:flex;align-items:center">${u.email?`<input type="checkbox" style="width:22px;height:22px;flex:none;margin:0 8px 0 0" ${mailSel.has(u.email)?'checked':''} onchange="toggleSel('${esc(u.email)}',this.checked)">`:''}${av(u.first_name,u.avatar_url)}<span><b>${esc(u.first_name||'—')}</b>${u.verified?'<span class="tag t-ok">✓</span>':''}<br><small style="color:var(--m)"><button class="link" style="font-size:inherit" onclick="mailMember('${u.uid}')">✉️ ${esc(u.email||'')}</button>${u.car_model?' · 🚗 '+esc(u.car_model):''}${u.stripe_ready?' · 💳':''}${mailStats[u.uid]?`<br>📧 ${mailStats[u.uid].n} e-mail${mailStats[u.uid].n>1?'s':''} · dernier le ${new Date(mailStats[u.uid].last_at).toLocaleDateString('fr-FR')} (${TPL_NAME[mailStats[u.uid].last_tpl]||mailStats[u.uid].last_tpl})`:''}</small></span></span>
       <button class="btn small ${u.verified?'sec':''}" onclick="setVerified('${u.uid}',${!u.verified},this)">${u.verified?'Retirer':'✓ Vérifier'}</button></div>`).join(''); };
   $('#aq').oninput=draw; draw(); openAdmin._data=data; loadVerifQueue(); loadReports(); drawMail();
 }
@@ -632,16 +633,40 @@ const mailTo = (list, name, tpl='libre') => { const t=MAIL_TPL[tpl]; const one=l
   const body=t.b.replace('{P}', one&&name?' '+name:'');
   return one ? `mailto:${encodeURIComponent(list[0])}?subject=${encodeURIComponent(t.s)}&body=${encodeURIComponent(body)}`
              : `mailto:covoitandelys@gmail.com?bcc=${list.map(encodeURIComponent).join(',')}&subject=${encodeURIComponent(t.s)}&body=${encodeURIComponent(body)}`; };
-function mailGroup(){ const d=openAdmin._data||[], g=$('#mg')?.value||'unverified_drivers';
+const mailSel=new Set(); let mailStats={};
+const TPL_NAME={badge:'badge',trajet:'trajet',libre:'message libre'};
+async function loadMailStats(){ const {data}=await sb.rpc('admin_mail_stats'); mailStats={}; (data||[]).forEach(r=>mailStats[r.user_id]=r); }
+async function logMails(btn){ const list=mailGroup().map(u=>u.email); if(!list.length) return; btn.disabled=true;
+  const {error}=await sb.rpc('admin_log_mails',{emails:list,tpl:$('#mt').value}); if(error){btn.disabled=false;return toast(errMsg(error));}
+  toast(`Envoi enregistré pour ${list.length} membre${list.length>1?'s':''} ✅`); mailSel.clear(); await loadMailStats(); $('#aq').oninput(); drawMail2(); }
+function toggleSel(e,on){ on?mailSel.add(e):mailSel.delete(e); if($('#mg')&&$('#mg').value!=='custom'){ $('#mg').value='custom'; } drawMail2(); }
+function selAll(on){ const q=($('#aq')?.value||'').toLowerCase(); (openAdmin._data||[]).filter(u=>u.email&&(!q||(u.first_name||'').toLowerCase().includes(q)||u.email.toLowerCase().includes(q))).forEach(u=>on?mailSel.add(u.email):mailSel.delete(u.email)); $('#aq').oninput(); if($('#mg')) $('#mg').value='custom'; drawMail2(); }
+function mailGroup(){ const d=openAdmin._data||[], g=$('#mg')?.value||'custom';
+  if(g==='custom') return d.filter(u=>u.email&&mailSel.has(u.email));
   return d.filter(u=>u.email && (g==='all' || (g==='unverified'&&!u.verified) || (g==='unverified_drivers'&&!u.verified&&u.car_model) || (g==='verified'&&u.verified))); }
 function drawMail(){ const el=$('#amail'); if(!el) return;
-  el.innerHTML=`<label>Destinataires</label><select id="mg" onchange="drawMail2()"><option value="unverified_drivers">Conducteurs non vérifiés (véhicule renseigné)</option><option value="unverified">Tous les membres non vérifiés</option><option value="verified">Membres vérifiés</option><option value="all">Tous les membres</option></select>
+  el.innerHTML=`<label>Destinataires</label><select id="mg" onchange="drawMail2()"><option value="custom">☑️ Membres cochés dans la liste ci-dessous</option><option value="unverified_drivers">Conducteurs non vérifiés (véhicule renseigné)</option><option value="unverified">Tous les membres non vérifiés</option><option value="verified">Membres vérifiés</option><option value="all">Tous les membres</option></select>
     <label>Modèle de message</label><select id="mt" onchange="drawMail2()"><option value="badge">Demander le badge ✓ Vérifié</option><option value="trajet">Inviter à publier un trajet</option><option value="libre">Message libre</option></select>
     <div id="amail2"></div>`; drawMail2(); }
 function drawMail2(){ const el=$('#amail2'); if(!el) return; const list=mailGroup().map(u=>u.email);
-  el.innerHTML=`<div class="hint">${list.length} destinataire${list.length>1?'s':''}. Les adresses sont mises en <b>Cci</b> (copie cachée) : les membres ne voient pas les adresses des autres.</div>
-    ${list.length?`<a class="btn" href="${mailTo(list,'',$('#mt').value)}">✉️ Ouvrir l'e-mail prêt à envoyer</a><button class="btn sec" onclick="copyMails()">📋 Copier les adresses</button>`:''}
+  const custom=$('#mg')?.value==='custom';
+  el.innerHTML=`${custom?`<div class="hint">Coche les membres dans la liste « Tous les membres » plus bas. <button class="link" onclick="selAll(true)">Tout cocher</button> · <button class="link" onclick="selAll(false)">Tout décocher</button></div>`:''}<div class="hint">${list.length} destinataire${list.length>1?'s':''}. Les adresses sont mises en <b>Cci</b> (copie cachée) : les membres ne voient pas les adresses des autres.</div>
+    ${(()=>{ const tpl=$('#mt').value, already=mailGroup().filter(u=>mailStats[u.uid]&&(tpl==='libre'||mailStats[u.uid].last_tpl===tpl)&&Date.now()-new Date(mailStats[u.uid].last_at)<14*864e5);
+      return already.length?`<div class="note warn">⚠️ ${already.length} de ces membres ${already.length>1?'ont':'a'} déjà reçu ce type d'e-mail il y a moins de 15 jours : ${already.map(u=>esc(u.first_name||u.email)).join(', ')}. <button class="link" onclick="already_uncheck()">Les décocher</button></div>`:''; })()}
+    ${list.length?`<a class="btn" href="${mailTo(list,'',$('#mt').value)}" onclick="setTimeout(()=>{$('#mlog').style.display=''},800)">✉️ Ouvrir l'e-mail prêt à envoyer</a>
+      <div id="mlog" style="display:none" class="note">L'e-mail est parti ? Enregistre-le pour le suivi :<br><button class="btn small" onclick="logMails(this)">✅ Oui, enregistrer l'envoi</button></div>
+      <button class="btn sec" onclick="copyMails()">📋 Copier les adresses</button>
+      <button class="link" onclick="logMails(this)">✔ Marquer comme déjà envoyé (sans ouvrir l'e-mail)</button>`:''}
     <div class="hint">Envoie-le depuis le compte <b>covoitandelys@gmail.com</b>. Message d'information sur le service uniquement, pas de publicité.</div>`; }
+function mailMember(uid){ const u=(openAdmin._data||[]).find(x=>x.uid===uid); if(!u) return;
+  const prev=$('#sheet').innerHTML;
+  const opt=(k,l,d)=>`<a class="role" style="text-decoration:none;color:inherit" href="${mailTo([u.email],u.first_name,k)}" onclick="setTimeout(()=>openAdmin(),800)"><span class="e">${l}</span><span><b>${d}</b><small>${esc(MAIL_TPL[k].s)}</small></span></a>`;
+  sheet(`<h2>✉️ Écrire à ${esc(u.first_name||'ce membre')}</h2><div class="hint">${esc(u.email)}${u.verified?' · ✓ vérifié':' · non vérifié'}${u.car_model?' · 🚗 '+esc(u.car_model):''}</div>
+    <div class="roles">${opt('badge','🪪','Demander le badge ✓ Vérifié')}${opt('trajet','🔁','Inviter à publier un trajet')}${opt('libre','✍️','Message libre')}</div>
+    <div class="hint">L'e-mail s'ouvre prêt à envoyer, avec son prénom. Relis-le, puis envoie-le depuis covoitandelys@gmail.com.</div>
+    <button class="btn sec" onclick="openAdmin()">← Retour</button>`); }
+function already_uncheck(){ const tpl=$('#mt').value; if($('#mg')?.value!=='custom'){ mailSel.clear(); mailGroup().forEach(u=>mailSel.add(u.email)); } (openAdmin._data||[]).forEach(u=>{ if(mailStats[u.uid]&&(tpl==='libre'||mailStats[u.uid].last_tpl===tpl)&&Date.now()-new Date(mailStats[u.uid].last_at)<14*864e5) mailSel.delete(u.email); });
+  if($('#mg')) $('#mg').value='custom'; $('#aq').oninput(); drawMail2(); }
 async function copyMails(){ const t=mailGroup().map(u=>u.email).join(', ');
   try{ await navigator.clipboard.writeText(t); toast('Adresses copiées 📋 Colle-les dans le champ Cci'); }catch(e){ prompt('Copie ces adresses :', t); } }
 

@@ -615,13 +615,36 @@ async function reviewVerif(uid,ok,btn){
   toast(ok?'Membre vérifié ✅ Documents supprimés':'Demande refusée, documents supprimés'); loadVerifQueue(); $('#aq')?.oninput?.();
 }
 async function openAdmin(){
-  sheet('<h2>🛠️ Administration</h2><h3>🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
+  sheet('<h2>🛠️ Administration</h2><h3>🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
   const {data,error}=await sb.rpc('admin_list_users'); if(error){ $('#alist').innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   const draw=()=>{ const q=($('#aq').value||'').toLowerCase(); const rows=(data||[]).filter(u=>!q||(u.first_name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q));
-    $('#alist').innerHTML=`<div class="hint">${rows.length} membre${rows.length>1?'s':''}</div>`+rows.map(u=>`<div class="meta"><span style="display:flex;align-items:center">${av(u.first_name,u.avatar_url)}<span><b>${esc(u.first_name||'—')}</b>${u.verified?'<span class="tag t-ok">✓</span>':''}<br><small style="color:var(--m)">${esc(u.email||'')}${u.car_model?' · 🚗 '+esc(u.car_model):''}${u.stripe_ready?' · 💳':''}</small></span></span>
+    $('#alist').innerHTML=`<div class="hint">${rows.length} membre${rows.length>1?'s':''}</div>`+rows.map(u=>`<div class="meta"><span style="display:flex;align-items:center">${av(u.first_name,u.avatar_url)}<span><b>${esc(u.first_name||'—')}</b>${u.verified?'<span class="tag t-ok">✓</span>':''}<br><small style="color:var(--m)"><a href="${mailTo([u.email],u.first_name)}" style="color:var(--g)">✉️ ${esc(u.email||'')}</a>${u.car_model?' · 🚗 '+esc(u.car_model):''}${u.stripe_ready?' · 💳':''}</small></span></span>
       <button class="btn small ${u.verified?'sec':''}" onclick="setVerified('${u.uid}',${!u.verified},this)">${u.verified?'Retirer':'✓ Vérifier'}</button></div>`).join(''); };
-  $('#aq').oninput=draw; draw(); openAdmin._data=data; loadVerifQueue(); loadReports();
+  $('#aq').oninput=draw; draw(); openAdmin._data=data; loadVerifQueue(); loadReports(); drawMail();
 }
+
+/* ======== E-mails aux membres (admin) ======== */
+const MAIL_TPL = {
+  badge: { s: "Covoit' Andelys : obtiens ton badge ✓ Vérifié", b: "Bonjour{P},\n\nMerci d'utiliser Covoit' Andelys ! 🚗\n\nPour rassurer les passagers et trouver plus facilement du monde, tu peux obtenir le badge ✓ Vérifié en 2 minutes : dans l'appli, Profil → Badge ✓ Vérifié → envoie ta pièce d'identité, ton permis et ton attestation d'assurance. Nous les contrôlons rapidement, puis ils sont supprimés.\n\nTes trajets n'afficheront plus « Profil non vérifié ».\n\nhttps://covoitandelys.github.io/covoit-andelys/\n\nL'équipe Covoit' Andelys" },
+  trajet: { s: "Covoit' Andelys : publie ton trajet habituel", b: "Bonjour{P},\n\nMerci de t'être inscrit(e) sur Covoit' Andelys ! As-tu un trajet régulier (travail, courses…) ? Tu peux le publier pour toute la semaine en une seule fois avec « 🔁 Trajet régulier », dans l'onglet Conducteur → Proposer.\n\nDes passagers cherchent peut-être déjà ton trajet : l'appli te l'indique.\n\nhttps://covoitandelys.github.io/covoit-andelys/\n\nL'équipe Covoit' Andelys" },
+  libre: { s: "Covoit' Andelys", b: "Bonjour{P},\n\n\n\nL'équipe Covoit' Andelys" } };
+const mailTo = (list, name, tpl='libre') => { const t=MAIL_TPL[tpl]; const one=list.length===1;
+  const body=t.b.replace('{P}', one&&name?' '+name:'');
+  return one ? `mailto:${encodeURIComponent(list[0])}?subject=${encodeURIComponent(t.s)}&body=${encodeURIComponent(body)}`
+             : `mailto:covoitandelys@gmail.com?bcc=${list.map(encodeURIComponent).join(',')}&subject=${encodeURIComponent(t.s)}&body=${encodeURIComponent(body)}`; };
+function mailGroup(){ const d=openAdmin._data||[], g=$('#mg')?.value||'unverified_drivers';
+  return d.filter(u=>u.email && (g==='all' || (g==='unverified'&&!u.verified) || (g==='unverified_drivers'&&!u.verified&&u.car_model) || (g==='verified'&&u.verified))); }
+function drawMail(){ const el=$('#amail'); if(!el) return;
+  el.innerHTML=`<label>Destinataires</label><select id="mg" onchange="drawMail2()"><option value="unverified_drivers">Conducteurs non vérifiés (véhicule renseigné)</option><option value="unverified">Tous les membres non vérifiés</option><option value="verified">Membres vérifiés</option><option value="all">Tous les membres</option></select>
+    <label>Modèle de message</label><select id="mt" onchange="drawMail2()"><option value="badge">Demander le badge ✓ Vérifié</option><option value="trajet">Inviter à publier un trajet</option><option value="libre">Message libre</option></select>
+    <div id="amail2"></div>`; drawMail2(); }
+function drawMail2(){ const el=$('#amail2'); if(!el) return; const list=mailGroup().map(u=>u.email);
+  el.innerHTML=`<div class="hint">${list.length} destinataire${list.length>1?'s':''}. Les adresses sont mises en <b>Cci</b> (copie cachée) : les membres ne voient pas les adresses des autres.</div>
+    ${list.length?`<a class="btn" href="${mailTo(list,'',$('#mt').value)}">✉️ Ouvrir l'e-mail prêt à envoyer</a><button class="btn sec" onclick="copyMails()">📋 Copier les adresses</button>`:''}
+    <div class="hint">Envoie-le depuis le compte <b>covoitandelys@gmail.com</b>. Message d'information sur le service uniquement, pas de publicité.</div>`; }
+async function copyMails(){ const t=mailGroup().map(u=>u.email).join(', ');
+  try{ await navigator.clipboard.writeText(t); toast('Adresses copiées 📋 Colle-les dans le champ Cci'); }catch(e){ prompt('Copie ces adresses :', t); } }
+
 async function setVerified(id,v,btn){ btn.disabled=true; const {error}=await sb.rpc('admin_set_verified',{target:id,v}); if(error){btn.disabled=false;return toast(errMsg(error));}
   const u=(openAdmin._data||[]).find(x=>x.uid===id); if(u) u.verified=v; if(id===user.id) me.verified=v; toast(v?'Badge ✓ Vérifié attribué':'Badge retiré'); $('#aq').oninput(); }
 

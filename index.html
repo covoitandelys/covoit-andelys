@@ -203,13 +203,20 @@ async function refreshNotif(){
 const STATUS = {pending:'<span class="tag new">⏳ En attente</span>', accepted:'<span class="tag t-ok">✅ Confirmé</span>', refused:'<span class="tag" style="background:#fee2e2;color:#b91c1c">❌ Refusé</span>'};
 const payText = d => { const m=[]; if(d.stripe_ready) m.push('💳 carte bancaire (+ frais de service)'); if(d.paypal_me) m.push('PayPal'); if(d.accepts_cash!==false) m.push('💶 espèces au conducteur');
   return m.length ? 'Paiement accepté : '+m.join(' · ')+'.' : 'Règle ta part directement au conducteur.'; };
-const payChoice = (b, d, amt) => { const btns=[];
-  if(d.stripe_ready) btns.push(`<button class="btn small" onclick="payCard('${b.id}',this)">💳 Carte</button>`);
-  if(d.paypal_me) btns.push(`<a class="btn small ${btns.length?'sec':''}" href="${payLink(d.paypal_me, amt)}" target="_blank" rel="noopener">🅿️ PayPal</a>`);
-  if(d.accepts_cash!==false) btns.push(`<button class="btn small ${btns.length?'sec':''}" onclick="payCash(${amt},'${esc(d.first_name||'au conducteur')}')">💶 Espèces</button>`);
+const PAY_NAME={card:'💳 Carte',paypal:'🅿️ PayPal',cash:'💶 Espèces'};
+const payChoice = (b, d, amt) => { const sel=b.pay_method, btns=[], cls=k=>`btn small ${sel===k?'':'sec'}`, mark=k=>sel===k?' ✓':'';
+  if(d.stripe_ready) btns.push(`<button class="${cls('card')}" onclick="payCard('${b.id}',this)">💳 Carte${mark('card')}</button>`);
+  if(d.paypal_me) btns.push(`<a class="${cls('paypal')}" href="${payLink(d.paypal_me, amt)}" target="_blank" rel="noopener" onclick="setPay('${b.id}','paypal')">🅿️ PayPal${mark('paypal')}</a>`);
+  if(d.accepts_cash!==false) btns.push(`<button class="${cls('cash')}" onclick="payCash('${b.id}',${amt},'${esc(d.first_name||'au conducteur')}')">💶 Espèces${mark('cash')}</button>`);
   if(!btns.length) return '<div class="hint">Règle ta part directement au conducteur.</div>';
-  return `<div class="hint" style="margin-top:8px"><b>Comment veux-tu payer ?</b></div><div class="chips" style="margin-top:4px">${btns.join('')}</div>${d.stripe_ready?'<div class="hint" style="margin-top:4px">💳 Carte : + frais de service (10 %, min. 0,50 €)</div>':''}`; };
-function payCash(amt, name){ sheet(`<h2>💶 Paiement en espèces</h2><div class="hint">Tu paies <b>${eur(amt)}</b> en main propre à <b>${name}</b>, le jour du trajet.</div><div class="note">💡 Prévois l'appoint si possible. Aucun frais, rien à faire dans l'appli.</div><button class="btn" onclick="closeSheet()">OK, compris</button>`); }
+  const name=esc(d.first_name||'Le conducteur');
+  return `<div class="hint" style="margin-top:8px"><b>Comment veux-tu payer ?</b></div><div class="chips" style="margin-top:4px">${btns.join('')}</div>`
+    + (sel ? `<div class="note" style="margin-top:6px">✅ Choix enregistré : <b>${PAY_NAME[sel]}</b>. ${name} est prévenu. Tu peux encore changer.</div>`
+           : `<div class="hint" style="margin-top:4px">Choisis un moyen : ${name} sera prévenu.</div>`)
+    + (d.stripe_ready?'<div class="hint" style="margin-top:4px">💳 Carte : + frais de service (10 %, min. 0,50 €)</div>':''); };
+async function setPay(bid, m){ const {error}=await sb.rpc('set_pay_method',{b:bid,m}); if(error){ toast(errMsg(error)); return false; } return true; }
+async function payCash(bid, amt, name){ if(!await setPay(bid,'cash')) return;
+  sheet(`<h2>💶 Paiement en espèces</h2><div class="note">✅ <b>Choix enregistré.</b> ${name} est prévenu que tu paies en espèces.</div><div class="hint">Tu paies <b>${eur(amt)}</b> en main propre, le jour du trajet. Prévois l'appoint si possible. Aucun frais.</div><button class="btn" onclick="closeSheet();render()">OK</button>`); }
 const payLink = (pp, amount) => `https://paypal.me/${encodeURIComponent(pp)}/${Number(amount).toFixed(2)}EUR`;
 const unreadDot = bid => { const n=(notif.unread||{})[bid]; return n?`<b class="dot">${n}</b>`:''; };
 function tripCard(t, actions){
@@ -324,7 +331,7 @@ async function render(){
     const seenBefore = me?.mine_seen_at; await refreshNotif();
     const [bk, mt] = await Promise.all([
       sb.from('bookings').select('*, trip:trips(*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at))').eq('passenger_id', user.id).order('created_at',{ascending:false}),
-      sb.from('trips').select('*, bookings(id,seats,children,status,paid,created_at,passenger:profiles!bookings_passenger_id_fkey(first_name,avatar_url,created_at))').eq('driver_id', user.id).gte('depart_at', new Date(Date.now()-864e5).toISOString()).order('depart_at')
+      sb.from('trips').select('*, bookings(id,seats,children,status,paid,pay_method,created_at,passenger:profiles!bookings_passenger_id_fkey(first_name,avatar_url,created_at))').eq('driver_id', user.id).gte('depart_at', new Date(Date.now()-864e5).toISOString()).order('depart_at')
     ]);
     const myB = (bk.data||[]).filter(b=>b.trip);
     const {data:rv} = await sb.from('reviews').select('booking_id').eq('reviewer_id', user.id); const reviewed=new Set((rv||[]).map(r=>r.booking_id));
@@ -343,7 +350,7 @@ async function render(){
       }).join('') || `<div class="empty">Aucune réservation.<br><br><button class="btn sec" onclick="go('search')">Rechercher un trajet</button></div>`);
     const driverHTML = `<h3 style="margin:4px">Mes trajets proposés</h3>` +
       ((mt.data||[]).map(t => tripCard({...t, driver:me}, `<button class="btn small sec" onclick="delTrip('${t.id}')">Supprimer</button>`) +
-        (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${b.seats} pl.${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}${b.passenger?.created_at?`<br><small style="color:var(--m)">${sinceText(b.passenger.created_at)}</small>`:''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Payé</span>':''}${canRate(b,t)?` <button class="btn small" onclick="openReview('${b.id}','${esc(b.passenger?.first_name||'')}')">⭐ Noter</button>`:''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${esc(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}</div>` : '')
+        (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${b.seats} pl.${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}${b.passenger?.created_at?`<br><small style="color:var(--m)">${sinceText(b.passenger.created_at)}</small>`:''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Payé</span>':b.status==='accepted'&&b.pay_method?` <span class="tag">${b.pay_method==='cash'?'💶 Paiera en espèces':b.pay_method==='paypal'?'🅿️ Paiera par PayPal':'💳 Paiera par carte'}</span>`:''}${canRate(b,t)?` <button class="btn small" onclick="openReview('${b.id}','${esc(b.passenger?.first_name||'')}')">⭐ Noter</button>`:''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${esc(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}</div>` : '')
       ).join('') || `<div class="empty">Aucun trajet proposé.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`);
     v.innerHTML = mode==='driver' ? driverHTML : passengerHTML;
     if((notif.new_bookings||notif.responses) && !(mode==='passenger'&&notif.new_bookings) && !(mode==='driver'&&notif.responses)){ await sb.rpc('mark_mine_seen'); if(me) me.mine_seen_at=new Date().toISOString(); refreshNotif(); }
@@ -562,7 +569,7 @@ async function callFn(body){
 async function stripeOnboard(){ const b=$('#stbtn'); b.disabled=true; b.textContent='Ouverture de Stripe…';
   try{ const r=await callFn({action:'onboard'}); if(r.ready){ me.stripe_ready=true; toast('Paiement par carte activé ✅'); render(); } else location.href=r.url; }
   catch(e){ b.disabled=false; b.textContent='Activer le paiement par carte'; toast(e.message); } }
-async function payCard(bid, btn){ btn.disabled=true; btn.textContent='…';
+async function payCard(bid, btn){ btn.disabled=true; btn.textContent='…'; setPay(bid,'card');
   try{ const r=await callFn({action:'checkout', booking_id:bid}); location.href=r.url; }
   catch(e){ btn.disabled=false; btn.textContent='💳 Carte'; toast(e.message); } }
 async function handleReturn(){

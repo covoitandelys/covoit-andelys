@@ -203,6 +203,13 @@ async function refreshNotif(){
 const STATUS = {pending:'<span class="tag new">⏳ En attente</span>', accepted:'<span class="tag t-ok">✅ Confirmé</span>', refused:'<span class="tag" style="background:#fee2e2;color:#b91c1c">❌ Refusé</span>'};
 const payText = d => { const m=[]; if(d.stripe_ready) m.push('💳 carte bancaire (+ frais de service)'); if(d.paypal_me) m.push('PayPal'); if(d.accepts_cash!==false) m.push('💶 espèces au conducteur');
   return m.length ? 'Paiement accepté : '+m.join(' · ')+'.' : 'Règle ta part directement au conducteur.'; };
+const payChoice = (b, d, amt) => { const btns=[];
+  if(d.stripe_ready) btns.push(`<button class="btn small" onclick="payCard('${b.id}',this)">💳 Carte</button>`);
+  if(d.paypal_me) btns.push(`<a class="btn small ${btns.length?'sec':''}" href="${payLink(d.paypal_me, amt)}" target="_blank" rel="noopener">🅿️ PayPal</a>`);
+  if(d.accepts_cash!==false) btns.push(`<button class="btn small ${btns.length?'sec':''}" onclick="payCash(${amt},'${esc(d.first_name||'au conducteur')}')">💶 Espèces</button>`);
+  if(!btns.length) return '<div class="hint">Règle ta part directement au conducteur.</div>';
+  return `<div class="hint" style="margin-top:8px"><b>Comment veux-tu payer ?</b></div><div class="chips" style="margin-top:4px">${btns.join('')}</div>${d.stripe_ready?'<div class="hint" style="margin-top:4px">💳 Carte : + frais de service (10 %, min. 0,50 €)</div>':''}`; };
+function payCash(amt, name){ sheet(`<h2>💶 Paiement en espèces</h2><div class="hint">Tu paies <b>${eur(amt)}</b> en main propre à <b>${name}</b>, le jour du trajet.</div><div class="note">💡 Prévois l'appoint si possible. Aucun frais, rien à faire dans l'appli.</div><button class="btn" onclick="closeSheet()">OK, compris</button>`); }
 const payLink = (pp, amount) => `https://paypal.me/${encodeURIComponent(pp)}/${Number(amount).toFixed(2)}EUR`;
 const unreadDot = bid => { const n=(notif.unread||{})[bid]; return n?`<b class="dot">${n}</b>`:''; };
 function tripCard(t, actions){
@@ -328,10 +335,11 @@ async function render(){
       (myB.map(b=>{ const d=b.trip.driver||{}, amt=b.trip.price*b.seats;
         return tripCard(b.trip, `<span><button class="btn small sec" onclick="openChat('${b.id}','${esc(d.first_name||'')}')">💬${unreadDot(b.id)}</button> <button class="btn small sec" onclick="cancelB('${b.id}')">Annuler</button></span>`) +
         `<div class="card" style="margin-top:-8px"><div class="meta" style="border:0;margin:0;padding:0"><span>${STATUS[b.status]||''} · ${b.seats} pl.${b.children?` (dont ${b.children} enfant${b.children>1?'s':''})`:''} · <b>${eur(amt)}</b></span>
-         ${b.paid ? '<span class="tag t-ok">💳 Payé</span>' : b.status==='accepted' ? `<span>${d.stripe_ready?`<button class="btn small" onclick="payCard('${b.id}',this)">💳 Carte</button> `:''}${d.paypal_me?`<a class="btn small ${d.stripe_ready?'sec':''}" href="${payLink(d.paypal_me, amt)}" target="_blank" rel="noopener">PayPal</a>`:''}</span>` : ''}</div>
+         ${b.paid ? '<span class="tag t-ok">💳 Payé</span>' : ''}</div>
+         ${b.status==='accepted' && !b.paid ? payChoice(b, d, amt) : ''}
          ${b.status==='accepted' && (plates[b.trip.driver_id]||carText(d)) ? `<div class="note">🚗 Ton véhicule : <b>${carText(d)||'—'}</b>${plates[b.trip.driver_id]?` · plaque <b>${esc(plates[b.trip.driver_id])}</b>`:''}</div>` : ''}
          ${canRate(b,b.trip)?`<button class="btn small" style="margin-top:6px" onclick="openReview('${b.id}','${esc(d.first_name||'le conducteur')}')">⭐ Noter ${esc(d.first_name||'le conducteur')}</button>`:''}
-         <div class="hint">${b.status==='pending' ? 'Le conducteur doit accepter ta demande.' : b.status==='refused' ? 'Le conducteur a refusé cette demande.' : b.paid ? 'Paiement reçu, merci ! Bon trajet 🚗' : payText(d)}</div></div>`;
+         <div class="hint">${b.status==='pending' ? 'Le conducteur doit accepter ta demande.' : b.status==='refused' ? 'Le conducteur a refusé cette demande.' : b.paid ? 'Paiement reçu, merci ! Bon trajet 🚗' : ''}</div></div>`;
       }).join('') || `<div class="empty">Aucune réservation.<br><br><button class="btn sec" onclick="go('search')">Rechercher un trajet</button></div>`);
     const driverHTML = `<h3 style="margin:4px">Mes trajets proposés</h3>` +
       ((mt.data||[]).map(t => tripCard({...t, driver:me}, `<button class="btn small sec" onclick="delTrip('${t.id}')">Supprimer</button>`) +

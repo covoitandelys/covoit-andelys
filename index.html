@@ -57,6 +57,7 @@ nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 .mode button{flex:1;border:0;background:none;color:#fff;font:inherit;font-weight:800;font-size:15px;padding:9px 6px;border-radius:99px;cursor:pointer;position:relative}
 .mode button.on{background:#fff;color:var(--g)}.mode .dot{position:absolute;top:2px;right:10px}
 .msg small{display:block;font-size:11px;opacity:.7}h3{margin:4px 0 8px}
+.annc{position:relative;background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:12px 40px 12px 14px;margin:10px 12px 0;font-size:14px;line-height:1.45;color:#78350f}.annc b{display:block;margin-bottom:2px}.annc button{position:absolute;top:6px;right:6px;background:none;border:0;font-size:18px;color:#92400e;padding:6px;cursor:pointer}
 .legal h2{margin:0 0 8px}.legal h4{margin:16px 0 4px;color:var(--g)}.legal p,.legal li{font-size:14px;line-height:1.5}.legal ul{padding-left:18px;margin:4px 0}
 </style>
 </head>
@@ -64,6 +65,7 @@ nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 <div class="app">
   <header><h1>🚗 Covoit' Andelys</h1><p>Covoiturage courte distance – Les Andelys &amp; alentours</p>
     <div class="mode"><button data-mode="passenger" onclick="setMode('passenger')">🧍 Passager<b class="dot" id="mdp" style="display:none"></b></button><button data-mode="driver" onclick="setMode('driver')">🚗 Conducteur<b class="dot" id="mdd" style="display:none"></b></button></div></header>
+  <div id="annc"></div>
   <main id="view"><div class="empty">Chargement…</div></main>
 </div>
 <nav>
@@ -230,7 +232,7 @@ function applyMode(){
   nb('mine').childNodes[1].textContent = mode==='driver' ? 'Mes trajets' : 'Mes réservations';
 }
 async function render(){
-  applyMode();
+  applyMode(); showAnnc();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
   const v = $('#view');
   if (!configured){ v.innerHTML = `<div class="card"><h3>Configuration manquante</h3><div class="hint">Colle l'adresse et la clé de ton projet Supabase en haut du fichier <b>index.html</b> (lignes « COLLE_ICI »).</div></div>`; return; }
@@ -633,14 +635,14 @@ async function reviewVerif(uid,ok,btn){
   toast(ok?'Membre vérifié ✅ Documents supprimés':'Demande refusée, documents supprimés'); loadVerifQueue(); $('#aq')?.oninput?.();
 }
 async function openAdmin(){
-  sheet('<h2>🛠️ Administration</h2><h3>🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
+  sheet('<h2>🛠️ Administration</h2><h3>🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📢 Annonces dans l’appli</h3><div id="aann"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
   const {data,error}=await sb.rpc('admin_list_users'); if(error){ $('#alist').innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   await loadMailStats();
   const draw=()=>{ const q=($('#aq').value||'').toLowerCase(); const rows=(data||[]).filter(u=>!q||(u.first_name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q));
     $('#alist').innerHTML=`<div class="hint">${rows.length} membre${rows.length>1?'s':''}</div>`+rows.map(u=>`<div class="meta"><span style="display:flex;align-items:center">${u.email?`<input type="checkbox" style="width:22px;height:22px;flex:none;margin:0 8px 0 0" ${mailSel.has(u.email)?'checked':''} onchange="toggleSel('${esc(u.email)}',this.checked)">`:''}${av(u.first_name,u.avatar_url)}<span><b>${esc(u.first_name||'—')}</b>${u.verified?'<span class="tag t-ok">✓</span>':''}${u.blocked?'<span class="tag" style="background:#fee2e2;color:#b91c1c">🚫 Bloqué</span>':''}<br><small style="color:var(--m)"><button class="link" style="font-size:inherit" onclick="mailMember('${u.uid}')">✉️ ${esc(u.email||'')}</button>${u.car_model?' · 🚗 '+esc(u.car_model):''}${u.stripe_ready?' · 💳':''}${mailStats[u.uid]?`<br>📧 ${mailStats[u.uid].n} e-mail${mailStats[u.uid].n>1?'s':''} · dernier le ${new Date(mailStats[u.uid].last_at).toLocaleDateString('fr-FR')} (${TPL_NAME[mailStats[u.uid].last_tpl]||mailStats[u.uid].last_tpl})`:''}</small></span></span>
       <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><button class="btn small ${u.verified?'sec':''}" onclick="setVerified('${u.uid}',${!u.verified},this)">${u.verified?'Retirer':'✓ Vérifier'}</button>
       <span style="white-space:nowrap"><button class="btn small sec" title="Historique" onclick="openHistory('${u.uid}','${esc(u.first_name||'')}')">📜</button> ${u.uid===user.id?'':`<button class="btn small sec" title="${u.blocked?'Débloquer':'Bloquer'}" onclick="askBlock('${u.uid}','${esc(u.first_name||'')}',${!u.blocked})">${u.blocked?'🔓':'🚫'}</button> <button class="btn small sec" title="Supprimer" onclick="askDeleteUser('${u.uid}','${esc(u.first_name||'')}')">🗑️</button>`}</span></span></div>`).join(''); };
-  $('#aq').oninput=draw; draw(); openAdmin._data=data; loadVerifQueue(); loadReports(); drawMail(); loadArchives();
+  $('#aq').oninput=draw; draw(); openAdmin._data=data; loadVerifQueue(); loadReports(); drawMail(); loadArchives(); loadAdminAnnc();
 }
 
 /* ======== E-mails aux membres (admin) ======== */
@@ -770,11 +772,47 @@ function reportUser(target, bid){
 }
 async function sendReport(target,bid,btn){ const reason=$('#rpm').value+' : '+$('#rpt').value.trim(); if($('#rpt').value.trim().length<3) return toast('Explique le problème en quelques mots');
   btn.disabled=true; const {error}=await sb.rpc('report_user',{p_target:target,p_booking:bid,p_reason:reason});
-  if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Signalement envoyé. Merci 🙏'); }
+  if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Signalement envoyé. Tu vas recevoir un e-mail de confirmation 🙏'); }
 async function loadReports(){ const el=$('#rqueue'); if(!el) return; const {data,error}=await sb.rpc('admin_list_reports');
   if(error){el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`;return;}
-  el.innerHTML=(data||[]).map(r=>`<div class="meta"><span><b>${esc(r.reporter||'?')}</b> → <b>${esc(r.target||'?')}</b><br><small class="hint">${new Date(r.created_at).toLocaleString('fr-FR')}</small><br>${esc(r.reason)}</span><button class="btn small sec" onclick="closeReport(${r.id})">Traité</button></div>`).join('')||'<div class="hint">Aucun signalement en attente.</div>'; }
-async function closeReport(id){ await sb.rpc('admin_close_report',{rid:id}); loadReports(); }
+  openAdmin._reports=data||[];
+  el.innerHTML=(data||[]).map(r=>`<div class="card" style="box-shadow:none;border:1px solid var(--b)"><b>${esc(r.reporter||'?')}</b> → <b>${esc(r.target||'?')}</b>${r.target_blocked?' <span class="tag" style="background:#fee2e2;color:#b91c1c">🚫 Bloqué</span>':''}
+    <br><small class="hint">${new Date(r.created_at).toLocaleString('fr-FR')}${r.nb_reports>1?` · <b style="color:#b91c1c">${r.nb_reports} signalements</b> contre ce membre`:''}${r.warnings?` · ${r.warnings} avertissement${r.warnings>1?'s':''} déjà envoyé${r.warnings>1?'s':''}`:''}</small>
+    <div style="margin:6px 0">${esc(r.reason)}</div>
+    <div class="chips">${r.target_id?`<button class="btn small" onclick="askWarn(${r.id})">⚠️ Avertir</button>${r.target_blocked?'':`<button class="btn small sec" onclick="askBlock('${r.target_id}','${esc(r.target||'')}',true)">🚫 Bloquer</button>`}<button class="btn small sec" onclick="openHistory('${r.target_id}','${esc(r.target||'')}')">📜</button>`:''}<button class="btn small sec" onclick="closeReport(${r.id},this)">✓ Classer</button></div></div>`).join('')||'<div class="hint">Aucun signalement en attente.</div>'; }
+async function closeReport(id,btn){ if(btn) btn.disabled=true; const {error}=await sb.rpc('admin_close_report',{rid:id}); if(error){ if(btn) btn.disabled=false; return toast(errMsg(error)); }
+  toast('Signalement classé. La personne qui a signalé est prévenue.'); loadReports(); }
+function askWarn(id){ const r=(openAdmin._reports||[]).find(x=>x.id===id); if(!r) return; const motif=(r.reason||'').split(' : ')[0];
+  sheet(`<h2>⚠️ Avertir ${esc(r.target||'ce membre')}</h2><div class="hint">Le membre reçoit un e-mail et une notification. <b>Le nom de la personne qui a signalé n'est jamais donné.</b> Le message ci-dessous apparaît dans l'e-mail, tu peux le modifier.</div>
+    <label>Message</label><textarea id="wmsg" rows="4" maxlength="600">Motif du signalement : ${esc(motif)}.</textarea>
+    <div class="hint">L'e-mail rappelle aussi les règles et prévient qu'un nouveau signalement peut entraîner le blocage du compte. Le signalement est ensuite classé et la personne qui a signalé est prévenue.</div>
+    <button class="btn" onclick="doWarn(${id},this)">Envoyer l'avertissement</button><button class="btn sec" onclick="openAdmin()">Retour</button>`); }
+async function doWarn(id,btn){ const m=$('#wmsg').value.trim(); if(m.length<5) return toast('Écris un message'); btn.disabled=true;
+  const {error}=await sb.rpc('admin_warn_report',{rid:id,p_msg:m}); if(error){ btn.disabled=false; return toast(errMsg(error)); }
+  toast('Avertissement envoyé ⚠️'); openAdmin(); }
+
+/* ======== Annonces (messages éphémères) ======== */
+let ANNC=[];
+const ANN_AUD={all:'Tout le monde',drivers:'Conducteurs',passengers:'Passagers',new:'Nouveaux inscrits (7 j)',unverified:'Non vérifiés'};
+function annSeen(){ try{ return JSON.parse(localStorage.getItem('covoit_ann')||'[]'); }catch(e){ return []; } }
+async function loadAnnc(){ try{ const {data}=await sb.from('announcements').select('id,title,body,audience').order('created_at',{ascending:false}); ANNC=data||[]; showAnnc(); }catch(e){} }
+function showAnnc(){ const el=$('#annc'); if(!el) return; const seen=annSeen(), fresh=me?.created_at && Date.now()-new Date(me.created_at)<7*864e5;
+  const ok=a=> a.audience==='all' || (user && ((a.audience==='drivers'&&mode==='driver')||(a.audience==='passengers'&&mode==='passenger')||(a.audience==='new'&&fresh)||(a.audience==='unverified'&&me&&!me.verified)));
+  el.innerHTML=ANNC.filter(a=>ok(a)&&!seen.includes(a.id)).slice(0,2).map(a=>`<div class="annc">${a.title?`<b>${esc(a.title)}</b>`:''}${esc(a.body)}<button aria-label="Fermer" onclick="hideAnnc(${a.id})">✕</button></div>`).join(''); }
+function hideAnnc(id){ const s=annSeen(); s.push(id); try{ localStorage.setItem('covoit_ann',JSON.stringify(s.slice(-50))); }catch(e){} showAnnc(); }
+async function loadAdminAnnc(){ const el=$('#aann'); if(!el) return; const {data,error}=await sb.rpc('admin_list_announcements');
+  if(error){ el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
+  el.innerHTML=`<label>Titre (facultatif)</label><input id="ant" maxlength="80" placeholder="Ex : Travaux sur la D313 vendredi">
+    <label>Message</label><textarea id="anb" rows="3" maxlength="500" placeholder="Ex : Pensez à publier vos trajets du week-end !"></textarea>
+    <div class="row"><div><label>Pour qui</label><select id="ana">${Object.entries(ANN_AUD).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+    <div><label>Pendant</label><select id="and"><option value="1">1 jour</option><option value="3" selected>3 jours</option><option value="7">1 semaine</option><option value="30">1 mois</option><option value="3650">Toujours</option></select></div></div>
+    <label style="display:flex;align-items:center;gap:10px;color:var(--t);font-size:15px"><input type="checkbox" id="anp" style="width:22px;height:22px"> 🔔 Envoyer aussi une notification</label>
+    <button class="btn small" onclick="postAnnc(this)">📢 Publier l'annonce</button>
+    <div class="hint" style="margin-top:10px"><b>En cours</b></div>`+((data||[]).map(a=>`<div class="meta"><span>${a.title?`<b>${esc(a.title)}</b><br>`:''}${esc(a.body)}<br><small style="color:var(--m)">${ANN_AUD[a.audience]||a.audience} · ${new Date(a.ends_at).getFullYear()>new Date().getFullYear()+5?'permanente':'jusqu\'au '+new Date(a.ends_at).toLocaleDateString('fr-FR')}</small></span><button class="btn small sec" onclick="endAnnc(${a.id},this)">Arrêter</button></div>`).join('')||'<div class="hint">Aucune annonce en cours.</div>'); }
+async function postAnnc(btn){ const body=$('#anb').value.trim(); if(!body) return toast('Écris le message'); btn.disabled=true;
+  const {error}=await sb.rpc('admin_post_announcement',{p_title:$('#ant').value.trim(),p_body:body,p_audience:$('#ana').value,p_days:+$('#and').value,p_push:$('#anp').checked});
+  if(error){ btn.disabled=false; return toast(errMsg(error)); } toast('Annonce publiée 📢'); loadAdminAnnc(); loadAnnc(); }
+async function endAnnc(id,btn){ btn.disabled=true; const {error}=await sb.rpc('admin_end_announcement',{aid:id}); if(error){ btn.disabled=false; return toast(errMsg(error)); } toast('Annonce arrêtée'); loadAdminAnnc(); loadAnnc(); }
 
 
 /* ======== Compte : suppression, blocage, historique ======== */
@@ -988,7 +1026,7 @@ async function openChat(bid, other){
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
-(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); })();
+(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured) loadAnnc(); })();
 </script>
 </body>
 </html>

@@ -39,6 +39,7 @@ nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-w
 nav button{flex:1;background:none;border:0;font:inherit;font-size:12px;font-weight:700;color:var(--m);cursor:pointer;padding:6px 0}
 nav button span{display:block;font-size:22px}nav button.on{color:var(--g)}
 .bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-end;justify-content:center;z-index:10}
+.map{position:relative;z-index:0;border-radius:14px;overflow:hidden;margin-top:10px;border:1px solid var(--b)}
 .sheet{background:#fff;width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:18px;max-height:88vh;overflow:auto}.sheet h2{margin:0 0 6px}
 .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 16px;border-radius:12px;font-weight:700;font-size:14px;display:none;z-index:20;max-width:90%;text-align:center}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{border:1px solid var(--b);background:#fff;border-radius:99px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}.chip.on{background:var(--g);color:#fff;border-color:var(--g)}
@@ -206,7 +207,7 @@ function tripCard(t, actions){
    <div class="route"><b>${esc(t.from_place)}</b><span>↓ ${k} km · ~${dur(k)} min</span><b>${esc(t.to_place)}</b></div>
    <div class="price">${eur(t.price)}<small>par place</small></div></div>
    <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)} · `:''}${tripOpts(t)}</div>
-   ${t.meeting_point?`<div class="hint">📍 RDV : ${esc(t.meeting_point)}</div>`:''}
+   ${t.meeting_point||t.meet_lat?`<div class="hint">📍 RDV : ${esc(t.meeting_point||'point sur la carte')}${t.meet_lat?` · <a href="${gmapsUrl(t)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🗺️ Itinéraire</a>`:''}</div>`:''}
    <div class="hint" style="font-weight:700;color:${left>0?'var(--g)':'#b91c1c'}">${seatsText(left,t.seats)}</div>
    ${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}
    <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${stars(t.driver)}${badge(t.driver)||(t.driver&&t.driver.first_name?'<span class="tag" style="background:#f3f4f6;color:#6b7280">Profil non vérifié</span>':'')}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}${soonText(d)?`<span class="tag new">⏱ ${soonText(d)}</span>`:''}<br><small style="color:var(--m)">${dayLabel(d)}</small></div></div>
@@ -271,6 +272,7 @@ async function render(){
 
   if (tab==='offer'){
     if (!user) return needLogin(v, 'proposer un trajet');
+    meetPick=null;
     v.innerHTML = `<div id="demand"></div><div class="card"><h3>Proposer un trajet</h3>
      <label>Départ</label>${placeInput('of','Les Andelys')}
      <label>Arrivée</label>${placeInput('ot','','Ex : Perriers-sur-Andelle, Gare de Vernon…')}
@@ -288,6 +290,7 @@ async function render(){
      <label>Message (facultatif)</label><input id="on" maxlength="200" placeholder="Ex : départ place Nicolas Poussin">
      <label>Bagages</label><select id="olg"><option value="none">🚫 Pas de bagage</option><option value="small" selected>🎒 Petit bagage (sac, cabas)</option><option value="large">🧳 Valise acceptée</option></select>
      <label>Point de rendez-vous précis (facultatif)</label><input id="omp" maxlength="120" placeholder="Ex : parking de la mairie, devant la pharmacie">
+     <button class="btn sec small" type="button" id="omb" style="margin-top:8px" onclick="openMeetMap()">🗺️ Placer sur la carte</button>
      <div class="chips"><button class="chip" id="opt" onclick="this.classList.toggle('on')">🐾 Animaux acceptés</button><button class="chip" id="om2" onclick="this.classList.toggle('on')">💺 Max 2 à l'arrière</button>
      <button class="chip" id="oi" onclick="this.classList.toggle('on')">⚡ Réservation instantanée</button><button class="chip" id="ow" onclick="this.classList.toggle('on')">♀ Réservé aux femmes</button></div>
      <div class="hint">Sans « instantanée », tu reçois une demande et tu acceptes ou refuses chaque passager.</div>
@@ -482,7 +485,7 @@ function openTrip(id){
     <div class="card" style="box-shadow:none;border:1px solid var(--b);margin-top:12px"><div class="drv">${av(t.driver?.first_name, t.driver?.avatar_url, 56)}<div><b style="font-size:18px">${esc(t.driver?.first_name)}</b>${stars(t.driver)}${badge(t.driver)}<br><small class="hint" id="dstats">…</small></div></div>
      ${t.driver?.bio?`<div class="hint" style="font-style:italic">« ${esc(t.driver.bio)} »</div>`:''}
      <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)}<br>`:''}${tripOpts(t).split(' · ').join('<br>')}${carText(t.driver)?'<br><small>La plaque te sera montrée une fois ta demande acceptée.</small>':''}</div>
-     ${t.meeting_point?`<div class="hint">📍 Rendez-vous : <b>${esc(t.meeting_point)}</b></div>`:''}${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}</div>
+     ${t.meeting_point?`<div class="hint">📍 Rendez-vous : <b>${esc(t.meeting_point)}</b></div>`:''}${t.meet_lat?`<div id="tmap" class="map" style="height:180px"></div>${goLinks(t)}`:''}${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}</div>
     <label>Nombre de places</label><select id="bn">${Array.from({length:left},(_,i)=>`<option>${i+1}</option>`).join('')}</select>
     <label>👶 Dont enfants voyageant avec toi</label><select id="bk"><option value="0">Aucun</option></select>
     <div class="hint" id="bkh" style="display:none">Un enfant voyage toujours <b>accompagné d'un adulte</b>. Pense à apporter le <b>siège auto ou rehausseur</b> adapté (obligatoire pour les moins de 10 ans).</div>
@@ -497,6 +500,7 @@ function openTrip(id){
   $('#bn').onchange=()=>{tot();kids();}; tot(); kids();
   if(user) sb.from('reviews').select('rating,comment,created_at').eq('reviewee_id',t.driver_id).not('comment','is',null).order('created_at',{ascending:false}).limit(3).then(({data})=>{
     const el=$('#drev'); if(el&&data?.length) el.innerHTML='<div class="hint" style="margin-top:8px"><b>Avis des passagers</b></div>'+data.map(r=>`<div class="hint">${'⭐'.repeat(r.rating)} « ${esc(r.comment)} »</div>`).join(''); });
+  if(t.meet_lat) showMeetMap('tmap', t);
   if(user && user.id!==t.driver_id) $('#sheet').insertAdjacentHTML('beforeend',`<button class="link" style="margin-top:6px" onclick="reportUser('${t.driver_id}',null)">🚩 Signaler ce conducteur</button>`);
   sb.rpc('driver_stats',{d:t.driver_id}).then(({data})=>{ const el=$('#dstats'); if(!el||!data) return;
     const since=data.since?new Date(data.since).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}):'';
@@ -528,9 +532,9 @@ async function publish(){
   $('#pub').disabled=true;
   const base={from_place:a,to_place:b,seats:s,km:km(a,b),price,
     note:$('#on').value.trim(),women_only:$('#ow').classList.contains('on'),instant:$('#oi').classList.contains('on'),luggage:$('#olg').value,
-    pets:$('#opt').classList.contains('on'),max2_back:$('#om2').classList.contains('on'),meeting_point:$('#omp').value.trim()};
+    pets:$('#opt').classList.contains('on'),max2_back:$('#om2').classList.contains('on'),meeting_point:$('#omp').value.trim(),meet_lat:meetPick?.lat??null,meet_lng:meetPick?.lng??null};
   const {error}=await sb.from('trips').insert(dates.map(d=>({...base,depart_at:d.toISOString()})));
-  $('#pub').disabled=false; if(error)return toast(errMsg(error)); toast(dates.length>1?`${dates.length} trajets publiés 🔁`:'Trajet publié 🚗'); go('mine');
+  $('#pub').disabled=false; if(error)return toast(errMsg(error)); meetPick=null; toast(dates.length>1?`${dates.length} trajets publiés 🔁`:'Trajet publié 🚗'); go('mine');
   if(!me?.verified){ const {data:vr}=await sb.from('verif_requests').select('status').eq('user_id',user.id).maybeSingle();
     if(!vr||vr.status==='refused') setTimeout(()=>sheet(`<h2>Bravo, ton trajet est en ligne ! 🚗</h2>
       <div class="hint">Dernière étape pour trouver des passagers plus facilement : le <b>badge ✓ Vérifié</b>.</div>
@@ -769,6 +773,40 @@ async function loadReports(){ const el=$('#rqueue'); if(!el) return; const {data
   el.innerHTML=(data||[]).map(r=>`<div class="meta"><span><b>${esc(r.reporter||'?')}</b> → <b>${esc(r.target||'?')}</b><br><small class="hint">${new Date(r.created_at).toLocaleString('fr-FR')}</small><br>${esc(r.reason)}</span><button class="btn small sec" onclick="closeReport(${r.id})">Traité</button></div>`).join('')||'<div class="hint">Aucun signalement en attente.</div>'; }
 async function closeReport(id){ await sb.rpc('admin_close_report',{rid:id}); loadReports(); }
 
+
+/* ======== Carte des points de rendez-vous (OpenStreetMap) ======== */
+let meetPick=null;
+const gmapsUrl = t => `https://www.google.com/maps/dir/?api=1&destination=${t.meet_lat},${t.meet_lng}`;
+const goLinks = t => `<div class="chips" style="margin-top:8px"><a class="btn small" href="${gmapsUrl(t)}" target="_blank" rel="noopener">🧭 Y aller</a><a class="btn small sec" href="https://waze.com/ul?ll=${t.meet_lat},${t.meet_lng}&navigate=yes" target="_blank" rel="noopener">Waze</a></div>`;
+function loadLeaflet(){ if(window.L) return Promise.resolve();
+  return window._lf || (window._lf = new Promise((ok,ko)=>{ const c=document.createElement('link'); c.rel='stylesheet'; c.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(c);
+    const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'; s.onload=ok; s.onerror=()=>{ window._lf=null; ko(); }; document.head.appendChild(s); })); }
+function baseMap(el, center, zoom){ const m=L.map(el).setView(center, zoom);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(m); setTimeout(()=>m.invalidateSize(),250); return m; }
+async function revGeo(lat,lng){ try{ const r=await fetch(`https://data.geopf.fr/geocodage/reverse?lon=${lng}&lat=${lat}&index=address&limit=1`);
+  const p=(await r.json()).features?.[0]?.properties; return p ? [p.street||p.name, p.city].filter(Boolean).join(', ') : ''; }catch(e){ return ''; } }
+function meetBtn(){ const b=$('#omb'); if(b) b.textContent = meetPick ? '📍 Point placé sur la carte ✓ (modifier)' : '🗺️ Placer sur la carte'; }
+async function openMeetMap(){
+  const from = PLACES[$('#of')?.value] || PLACES['Les Andelys'] || [49.246,1.411];
+  sheet(`<h2>📍 Point de rendez-vous</h2><div class="hint">Touche la carte pour placer le point exact. Choisis un <b>lieu public</b> (parking, arrêt de bus, place…), jamais ton domicile.</div>
+    <div id="mmap" class="map" style="height:340px"></div>
+    <button class="btn sec small" type="button" id="mgps" style="margin-top:8px">📡 Ma position</button><div class="hint" id="mlab"></div>
+    <button class="btn" id="mok" disabled>Valider ce point</button>${meetPick?'<button class="btn sec" id="mdel">Retirer le point</button>':''}<button class="btn sec" onclick="closeSheet()">Annuler</button>`);
+  try{ await loadLeaflet(); }catch(e){ $('#mmap').innerHTML='<div class="empty">Carte indisponible, vérifie ta connexion.</div>'; return; }
+  const m = baseMap('mmap', meetPick?[meetPick.lat,meetPick.lng]:from, meetPick?17:15); let mk=null, cur=null, label='';
+  const set = async (lat,lng) => { cur={lat,lng}; label=''; if(mk) mk.setLatLng([lat,lng]); else mk=L.marker([lat,lng]).addTo(m);
+    $('#mok').disabled=false; $('#mlab').textContent='Recherche de l\'adresse…';
+    const l=await revGeo(lat,lng); if(cur.lat!==lat) return; label=l; $('#mlab').innerHTML = l?`📍 ${esc(l)}`:'📍 Point placé'; };
+  if(meetPick) set(meetPick.lat, meetPick.lng);
+  m.on('click', e=>set(e.latlng.lat, e.latlng.lng));
+  $('#mgps').onclick = () => { if(!navigator.geolocation) return toast('Position indisponible');
+    navigator.geolocation.getCurrentPosition(p=>{ m.setView([p.coords.latitude,p.coords.longitude],17); set(p.coords.latitude,p.coords.longitude); }, ()=>toast('Position indisponible'), {enableHighAccuracy:true,timeout:10000}); };
+  $('#mok').onclick = () => { meetPick={lat:+cur.lat.toFixed(6), lng:+cur.lng.toFixed(6)};
+    if(label && !$('#omp').value.trim()) $('#omp').value=label.slice(0,120); closeSheet(); meetBtn(); toast('Point de rendez-vous placé 📍'); };
+  if($('#mdel')) $('#mdel').onclick = () => { meetPick=null; closeSheet(); meetBtn(); };
+}
+async function showMeetMap(id, t){ try{ await loadLeaflet(); }catch(e){ return; } const el=document.getElementById(id); if(!el) return;
+  const m=baseMap(el, [t.meet_lat,t.meet_lng], 16); L.marker([t.meet_lat,t.meet_lng]).addTo(m); }
 
 /* ======== Accueil des nouveaux membres & profil à compléter ======== */
 const FB_URL = 'https://www.facebook.com/share/1FZ1LfJeSh/';

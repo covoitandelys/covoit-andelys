@@ -78,7 +78,7 @@ nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 /* ======== CONFIGURATION : colle ici tes 2 valeurs Supabase (Project Settings > API) ======== */
 const SUPABASE_URL = 'https://ntqdmoeqeuoxojhdyrby.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_LnPPU-93ttb-kneXOKWddQ_SfHCLsja';
-const CONTACT_EMAIL = 'covoitandelys@gmail.com'; // e-mail affiché pour la vérification d'identité
+const CONTACT_EMAIL = 'contact@covoit-andelys.fr'; // e-mail affiché pour la vérification d'identité
 /* =========================================================================================== */
 
 const PLACES = {"Les Andelys":[49.246,1.411],"Vernon":[49.093,1.485],"Gare de Vernon-Giverny":[49.088,1.473],"Gaillon":[49.161,1.329],
@@ -380,21 +380,23 @@ async function render(){
   }
 }
 
-const LEGAL_UPDATED = '5 novembre 2026';
+const LEGAL_UPDATED = '8 novembre 2026';
 const LEGAL = {
 mentions: `<h2>Mentions légales</h2>
 <h4>Éditeur</h4>
 <p>Covoit' Andelys est édité par <b>Peter JEAN JOSEPH</b>, entrepreneur individuel (micro-entrepreneur), nom commercial <b>YUSSNAI SERVICES</b>.<br>
 SIREN 827 628 462 – RCS Évreux – SIRET 827 628 462 00018<br>
 Adresse : 8 rue de la Pie, 27700 Les Andelys<br>
-Contact : covoitandelys@gmail.com<br>
+Site : https://covoit-andelys.fr – Contact : contact@covoit-andelys.fr<br>
 Directeur de la publication : Peter JEAN JOSEPH.</p>
 <h4>Hébergement</h4>
 <p>Application : GitHub Inc. (GitHub Pages), 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, États-Unis.<br>
 Base de données et comptes : Supabase Inc., serveurs situés dans l'Union européenne.<br>
-Paiements par carte : Stripe Payments Europe Ltd, 1 Grand Canal Street Lower, Dublin 2, Irlande.</p>
+Paiements par carte : Stripe Payments Europe Ltd, 1 Grand Canal Street Lower, Dublin 2, Irlande.<br>
+Nom de domaine et redirection e-mail : OVH SAS, 2 rue Kellermann, 59100 Roubaix, France.<br>
+Envoi des e-mails de notification : Brevo (Sendinblue SAS), 106 boulevard Haussmann, 75008 Paris, France.</p>
 <h4>Médiation de la consommation</h4>
-<p>Conformément aux articles L.611-1 et suivants du Code de la consommation, après une réclamation écrite préalable restée sans réponse satisfaisante (covoitandelys@gmail.com), le consommateur peut recourir gratuitement au médiateur : CM2C – Centre de la Médiation de la Consommation de Conciliateurs de justice, 49 rue de Ponthieu, 75008 Paris – <a href="https://www.cm2c.net" target="_blank" rel="noopener">www.cm2c.net</a> – 01 89 47 00 14.</p>`,
+<p>Conformément aux articles L.611-1 et suivants du Code de la consommation, après une réclamation écrite préalable restée sans réponse satisfaisante (contact@covoit-andelys.fr), le consommateur peut recourir gratuitement au médiateur : CM2C – Centre de la Médiation de la Consommation de Conciliateurs de justice, 49 rue de Ponthieu, 75008 Paris – <a href="https://www.cm2c.net" target="_blank" rel="noopener">www.cm2c.net</a> – 01 89 47 00 14.</p>`,
 
 cgu: `<h2>Conditions générales d'utilisation</h2>
 <p class="hint">Dernière mise à jour : ${LEGAL_UPDATED}</p>
@@ -418,7 +420,7 @@ cgu: `<h2>Conditions générales d'utilisation</h2>
 <li>ou directement au conducteur (PayPal, espèces) : aucun frais de service n'est alors perçu.</li></ul>
 <p>Les sommes reçues par le conducteur correspondent à un partage de frais et ne constituent pas un revenu tant qu'elles ne dépassent pas les frais réels du trajet. Les plateformes peuvent être tenues de déclarer à l'administration fiscale les sommes perçues par les conducteurs, au-delà des seuils légaux.</p>
 <h4>7. Annulation</h4>
-<p>Le passager peut annuler sa réservation depuis « Mes trajets ». Pour un paiement par carte, le remboursement se demande auprès de covoitandelys@gmail.com ; il est accordé lorsque le trajet n'a pas eu lieu du fait du conducteur, ou en cas d'annulation par le passager plus de 24 h avant le départ. Les frais de service restent dus en cas d'annulation tardive.</p>
+<p>Le passager peut annuler sa réservation depuis « Mes trajets ». Pour un paiement par carte, le remboursement se demande auprès de contact@covoit-andelys.fr ; il est accordé lorsque le trajet n'a pas eu lieu du fait du conducteur, ou en cas d'annulation par le passager plus de 24 h avant le départ. Les frais de service restent dus en cas d'annulation tardive.</p>
 <h4>8. Messagerie et comportement</h4>
 <p>La messagerie sert uniquement à organiser le trajet. Sont interdits : propos injurieux, discriminatoires ou menaçants, démarchage, fausses annonces, et toute utilisation commerciale du service. Covoit' Andelys peut supprimer un contenu ou suspendre un compte qui ne respecte pas ces règles.</p>
 <h4>9. Vérification d'identité</h4>
@@ -428,12 +430,12 @@ cgu: `<h2>Conditions générales d'utilisation</h2>
 <h4>11. Données personnelles</h4>
 <p>Voir la politique de confidentialité, accessible depuis l'application.</p>
 <h4>12. Modification et droit applicable</h4>
-<p>Ces conditions peuvent évoluer ; la version en vigueur est celle affichée dans l'application. Elles sont soumises au droit français. En cas de litige, une solution amiable est recherchée en priorité (covoitandelys@gmail.com). Après une réclamation écrite préalable, le consommateur peut recourir gratuitement au médiateur de la consommation : CM2C – Centre de la Médiation de la Consommation de Conciliateurs de justice, 49 rue de Ponthieu, 75008 Paris – <a href="https://www.cm2c.net" target="_blank" rel="noopener">www.cm2c.net</a> – 01 89 47 00 14. Le consommateur peut aussi saisir le tribunal compétent.</p>`,
+<p>Ces conditions peuvent évoluer ; la version en vigueur est celle affichée dans l'application. Elles sont soumises au droit français. En cas de litige, une solution amiable est recherchée en priorité (contact@covoit-andelys.fr). Après une réclamation écrite préalable, le consommateur peut recourir gratuitement au médiateur de la consommation : CM2C – Centre de la Médiation de la Consommation de Conciliateurs de justice, 49 rue de Ponthieu, 75008 Paris – <a href="https://www.cm2c.net" target="_blank" rel="noopener">www.cm2c.net</a> – 01 89 47 00 14. Le consommateur peut aussi saisir le tribunal compétent.</p>`,
 
 privacy: `<h2>Politique de confidentialité</h2>
 <p class="hint">Dernière mise à jour : ${LEGAL_UPDATED}</p>
 <h4>Responsable du traitement</h4>
-<p>Peter JEAN JOSEPH (YUSSNAI SERVICES), 8 rue de la Pie, 27700 Les Andelys – covoitandelys@gmail.com.</p>
+<p>Peter JEAN JOSEPH (YUSSNAI SERVICES), 8 rue de la Pie, 27700 Les Andelys – contact@covoit-andelys.fr.</p>
 <h4>Données collectées</h4>
 <ul><li><b>Compte</b> : prénom, adresse e-mail, mot de passe (chiffré).</li>
 <li><b>Trajets et réservations</b> : communes de départ et d'arrivée, dates, places, prix, messages échangés.</li>
@@ -447,14 +449,14 @@ privacy: `<h2>Politique de confidentialité</h2>
 <h4>Durée de conservation</h4>
 <p>Tant que le compte est actif, puis suppression dans un délai de 3 ans après la dernière activité. Les données de paiement sont conservées par Stripe et par Covoit' Andelys pendant la durée légale (10 ans pour les pièces comptables).</p>
 <h4>Vos droits</h4>
-<p>Vous pouvez accéder à vos données, les rectifier, les supprimer, vous opposer à leur traitement ou demander leur portabilité en écrivant à covoitandelys@gmail.com. Vous pouvez aussi introduire une réclamation auprès de la CNIL (www.cnil.fr).</p>
+<p>Vous pouvez accéder à vos données, les rectifier, les supprimer, vous opposer à leur traitement ou demander leur portabilité en écrivant à contact@covoit-andelys.fr. Vous pouvez aussi introduire une réclamation auprès de la CNIL (www.cnil.fr).</p>
 <h4>Cookies</h4>
 <p>L'application n'utilise pas de cookies publicitaires ni de traceurs. Seules les données techniques nécessaires à la connexion sont enregistrées sur votre appareil.</p>`
 };
 function openLegal(k){sheet(`<div class="legal">${LEGAL[k]}</div><button class="btn sec" onclick="closeSheet()">Fermer</button>`);$('#sheet').scrollTop=0;}
 function legalLinks(){return `<div class="hint" style="text-align:center;margin:18px 0 6px"><button class="link" onclick="openFAQ()">FAQ</button> · <button class="link" onclick="openFB()">Facebook</button> · <button class="link" onclick="openLegal('cgu')">CGU</button> · <button class="link" onclick="openLegal('privacy')">Confidentialité</button> · <button class="link" onclick="openLegal('mentions')">Mentions légales</button></div>`;}
 
-const FAQ = [["Est-ce légal ?", "Oui. Le covoiturage est défini par la loi (article L3132-1 du Code des transports) : le conducteur fait un trajet <b>pour lui-même</b> et partage seulement les frais, <b>sans bénéfice</b>. L'appli plafonne donc les prix au barème kilométrique divisé par le nombre d'occupants, et limite chaque conducteur à 4 trajets par jour."], ["Les passagers sont-ils assurés ?", "Oui. L'assurance auto obligatoire du conducteur (responsabilité civile) couvre ses passagers en covoiturage, tant qu'il ne fait que partager les frais. C'est la position de la DGCCRF (economie.gouv.fr). Le badge ✓ Vérifié indique que nous avons contrôlé le permis et l'assurance du conducteur."], ["C'est comme un taxi ?", "Non. Un taxi ou un VTC transporte des clients contre rémunération. Ici, le conducteur fait son propre trajet et propose ses places libres pour partager l'essence. Il ne gagne pas d'argent."], ["Combien ça coûte ?", "L'inscription est gratuite. Le prix d'une place est fixé par le conducteur, plafonné par la loi (souvent 1 à 4 € pour un trajet local). Payé en espèces ou par PayPal : aucun frais. Payé par carte dans l'appli : +10 % de frais de service (minimum 0,50 €)."], ["Comment installer l'appli sur Android ou iPhone ?", "Pas besoin du Play Store. <b>Android</b> : ouvre le lien dans Chrome → Profil → 📲 Installer l'appli (ou menu ⋮ → Installer l'application). <b>iPhone</b> : ouvre le lien dans Safari → bouton Partager ⬆️ → « Sur l'écran d'accueil »."], ["Comment être prévenu ?", "Profil → 🔔 Activer les notifications. Tu reçois une alerte pour les demandes, réponses, messages et nouveaux trajets. Tu peux aussi créer une <b>alerte trajet</b> (ex : Les Andelys → Vernon le matin)."], ["Ma commune n'est pas dans la liste", "Tape simplement son nom : toutes les communes de l'Eure et des départements voisins sont proposées. Le conducteur peut aussi préciser un point de rendez-vous ou les communes traversées dans le message du trajet."], ["Comment obtenir le badge ✓ Vérifié ?", "Profil → Badge ✓ Vérifié → envoie ta pièce d'identité, ton permis et ton attestation d'assurance. Nous les contrôlons puis les supprimons dès la réponse."], ["Et si je dois annuler ?", "Annule le plus tôt possible dans Mes trajets / Mes réservations : l'autre personne est prévenue automatiquement. Pour un paiement par carte, contacte-nous pour le remboursement."], ["Un enfant peut-il voyager ?", "Oui, uniquement accompagné d'un adulte qui réserve pour lui et apporte le siège auto ou rehausseur adapté. Un mineur ne peut pas voyager seul."], ["Un problème avec un membre ?", "Utilise « 🚩 Signaler un problème » dans le chat ou sur la fiche du conducteur. En cas d'urgence, appelle le 17 ou le 112."], ["Comment vous contacter ?", "Par e-mail : covoitandelys@gmail.com, ou en message sur notre page Facebook Covoit' Andelys."]];
+const FAQ = [["Est-ce légal ?", "Oui. Le covoiturage est défini par la loi (article L3132-1 du Code des transports) : le conducteur fait un trajet <b>pour lui-même</b> et partage seulement les frais, <b>sans bénéfice</b>. L'appli plafonne donc les prix au barème kilométrique divisé par le nombre d'occupants, et limite chaque conducteur à 4 trajets par jour."], ["Les passagers sont-ils assurés ?", "Oui. L'assurance auto obligatoire du conducteur (responsabilité civile) couvre ses passagers en covoiturage, tant qu'il ne fait que partager les frais. C'est la position de la DGCCRF (economie.gouv.fr). Le badge ✓ Vérifié indique que nous avons contrôlé le permis et l'assurance du conducteur."], ["C'est comme un taxi ?", "Non. Un taxi ou un VTC transporte des clients contre rémunération. Ici, le conducteur fait son propre trajet et propose ses places libres pour partager l'essence. Il ne gagne pas d'argent."], ["Combien ça coûte ?", "L'inscription est gratuite. Le prix d'une place est fixé par le conducteur, plafonné par la loi (souvent 1 à 4 € pour un trajet local). Payé en espèces ou par PayPal : aucun frais. Payé par carte dans l'appli : +10 % de frais de service (minimum 0,50 €)."], ["Comment installer l'appli sur Android ou iPhone ?", "Pas besoin du Play Store. <b>Android</b> : ouvre le lien dans Chrome → Profil → 📲 Installer l'appli (ou menu ⋮ → Installer l'application). <b>iPhone</b> : ouvre le lien dans Safari → bouton Partager ⬆️ → « Sur l'écran d'accueil »."], ["Comment être prévenu ?", "Profil → 🔔 Activer les notifications. Tu reçois une alerte pour les demandes, réponses, messages et nouveaux trajets. Tu peux aussi créer une <b>alerte trajet</b> (ex : Les Andelys → Vernon le matin)."], ["Ma commune n'est pas dans la liste", "Tape simplement son nom : toutes les communes de l'Eure et des départements voisins sont proposées. Le conducteur peut aussi préciser un point de rendez-vous ou les communes traversées dans le message du trajet."], ["Comment obtenir le badge ✓ Vérifié ?", "Profil → Badge ✓ Vérifié → envoie ta pièce d'identité, ton permis et ton attestation d'assurance. Nous les contrôlons puis les supprimons dès la réponse."], ["Et si je dois annuler ?", "Annule le plus tôt possible dans Mes trajets / Mes réservations : l'autre personne est prévenue automatiquement. Pour un paiement par carte, contacte-nous pour le remboursement."], ["Un enfant peut-il voyager ?", "Oui, uniquement accompagné d'un adulte qui réserve pour lui et apporte le siège auto ou rehausseur adapté. Un mineur ne peut pas voyager seul."], ["Un problème avec un membre ?", "Utilise « 🚩 Signaler un problème » dans le chat ou sur la fiche du conducteur. En cas d'urgence, appelle le 17 ou le 112."], ["Comment vous contacter ?", "Par e-mail : contact@covoit-andelys.fr, ou en message sur notre page Facebook Covoit' Andelys."]];
 function openFAQ(){ sheet(`<h2>❓ Questions fréquentes</h2>${FAQ.map(([q,a])=>`<details style="border-bottom:1px solid var(--b);padding:10px 0"><summary style="font-weight:800;cursor:pointer">${q}</summary><div class="hint" style="font-size:14px;margin-top:6px">${a}</div></details>`).join('')}<button class="btn sec" style="margin-top:14px" onclick="closeSheet()">Fermer</button>`); $('#sheet').scrollTop=0; }
 function infoCard(){return `<div class="card"><h3>Comment ça marche</h3><div class="hint" style="font-size:14px">
  1. Le conducteur publie un trajet qu'il fait déjà.<br>2. Le passager demande une place, le conducteur l'accepte, et ils échangent dans l'appli sans partager de numéro.<br>

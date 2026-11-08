@@ -149,6 +149,13 @@ const stars = d => d?.rating_count ? `<span class="rate">⭐ ${String(d.rating_a
 const carText = d => [d?.car_model, d?.car_color].filter(Boolean).map(esc).join(' · ');
 function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',Math.max(2600,m.length*60));}
 const opts = (sel,blank) => (blank?`<option value="">${blank}</option>`:'')+NAMES.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('');
+function addEyes(root){ (root||document).querySelectorAll('input[type=password]:not([data-eye])').forEach(i=>{ i.dataset.eye=1;
+  const w=document.createElement('div'); w.style.cssText='position:relative'; i.parentNode.insertBefore(w,i); w.appendChild(i); i.style.paddingRight='52px';
+  const b=document.createElement('button'); b.type='button'; b.textContent='👁️'; b.setAttribute('aria-label','Afficher le mot de passe');
+  b.style.cssText='position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:22px;padding:6px;cursor:pointer;margin:0;width:auto';
+  b.onclick=()=>{ const sh=i.type==='password'; i.type=sh?'text':'password'; b.textContent=sh?'🙈':'👁️'; b.setAttribute('aria-label',sh?'Masquer le mot de passe':'Afficher le mot de passe'); };
+  w.appendChild(b); }); }
+new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:true,subtree:true});
 function sheet(html){$('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 function closeSheet(){const wasChat=!!chatTimer;$('#bg').style.display='none';clearInterval(chatTimer);chatTimer=null;if(wasChat&&tab==='mine')render();}
 $('#bg').onclick = e => { if (e.target.id==='bg') closeSheet(); };
@@ -328,16 +335,19 @@ async function render(){
 
   if (tab==='profile'){
     if (!user){
-      v.innerHTML = `<div class="card"><h3 id="ah">Créer un compte</h3>
+      v.innerHTML = `<div class="card"><div class="mode" style="background:#e7f3f1;margin:0 0 12px"><button id="tsu" class="on" style="color:var(--g)" type="button">Créer un compte</button><button id="tli" style="color:var(--g)" type="button">Se connecter</button></div><h3 id="ah">Créer un compte</h3>
        <div id="fnw"><label>Prénom</label><input id="afn" autocomplete="given-name"></div>
        <label>E-mail</label><input id="aem" type="email" autocomplete="email">
        <label>Mot de passe</label><input id="apw" type="password" autocomplete="current-password" placeholder="6 caractères minimum">
        <label id="cguw" style="display:flex;gap:10px;align-items:flex-start;color:var(--t);font-weight:600;font-size:14px;margin-top:14px"><input type="checkbox" id="acgu" style="width:22px;height:22px;flex:none;margin-top:2px"><span>J'ai 18 ans ou plus et j'accepte les <button class="link" type="button" onclick="openLegal('cgu')">CGU</button> et la <button class="link" type="button" onclick="openLegal('privacy')">politique de confidentialité</button>.</span></label>
        <button class="btn" id="ago">Créer mon compte</button>
-       <button class="link" id="asw" style="margin-top:10px">J'ai déjà un compte</button></div>${infoCard()}${legalLinks()}`;
+       <button class="link" id="asw" style="display:none">J'ai déjà un compte</button>
+       <button class="link" id="afg" style="margin:12px auto 0;display:none;width:100%" onclick="forgotPw()">🔑 Mot de passe oublié ?</button></div>${infoCard()}${legalLinks()}`;
       let login=false;
       $('#asw').onclick=()=>{login=!login;$('#ah').textContent=login?'Se connecter':'Créer un compte';$('#fnw').style.display=login?'none':'block';$('#cguw').style.display=login?'none':'flex';
-        $('#ago').textContent=login?'Se connecter':'Créer mon compte';$('#asw').textContent=login?'Créer un compte':"J'ai déjà un compte";};
+        $('#ago').textContent=login?'Se connecter':'Créer mon compte';$('#afg').style.display=login?'block':'none';$('#asw').textContent=login?'Créer un compte':"J'ai déjà un compte";
+        $('#tsu').classList.toggle('on',!login); $('#tli').classList.toggle('on',login); $('#apw').autocomplete=login?'current-password':'new-password';};
+      $('#tsu').onclick=()=>{ if(login) $('#asw').onclick(); }; $('#tli').onclick=()=>{ if(!login) $('#asw').onclick(); };
       $('#ago').onclick=async()=>{const email=$('#aem').value.trim(),password=$('#apw').value,fn=$('#afn').value.trim();
         if(!login&&!fn)return toast('Indique ton prénom');if(!login&&!$('#acgu').checked)return toast('Accepte les CGU pour créer ton compte');$('#ago').disabled=true;
         const r = login ? await sb.auth.signInWithPassword({email,password}) : await sb.auth.signUp({email,password,options:{data:{first_name:fn,cgu_accepted_at:new Date().toISOString(),cgu_version:LEGAL_UPDATED}}});
@@ -844,6 +854,28 @@ async function loadDemand(){
     ${top.map((d,i)=>`<div class="meta"><span><b>${esc(d.from_place||'Partout')} → ${esc(d.to_place||'Partout')}</b><br><small class="hint">${SLOT_TXT[d.slot]||''} · ${d.n} passager${d.n>1?'s':''}</small></span><button class="btn small" onclick="useDemand(${i})">Proposer</button></div>`).join('')}</div>`;
 }
 
+
+/* ======== Mot de passe oublié ======== */
+function forgotPw(){
+  sheet(`<h2>🔑 Mot de passe oublié</h2><div class="hint">Indique ton e-mail : tu recevras un lien pour choisir un nouveau mot de passe.</div>
+    <label>E-mail</label><input id="fpe" type="email" autocomplete="email" value="${esc($('#aem')?.value||'')}">
+    <button class="btn" onclick="sendReset(this)">Recevoir le lien</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`);
+}
+async function sendReset(btn){ const email=$('#fpe').value.trim(); if(!email) return toast('Indique ton e-mail');
+  btn.disabled=true; const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+  btn.disabled=false; if(error) return toast(errMsg(error));
+  sheet(`<h2>📧 E-mail envoyé</h2><div class="hint">Si un compte existe avec <b>${esc(email)}</b>, tu vas recevoir un lien. Pense à regarder dans les spams.</div><button class="btn" onclick="closeSheet()">OK</button>`); }
+function newPwSheet(){
+  sheet(`<h2>🔑 Nouveau mot de passe</h2><div class="hint">Choisis ton nouveau mot de passe (6 caractères minimum).</div>
+    <label>Nouveau mot de passe</label><input id="npw" type="password" autocomplete="new-password">
+    <label>Confirme le mot de passe</label><input id="npw2" type="password" autocomplete="new-password">
+    <button class="btn" onclick="saveNewPw(this)">Enregistrer</button>`);
+}
+async function saveNewPw(btn){ const a=$('#npw').value, b=$('#npw2').value;
+  if(a.length<6) return toast('6 caractères minimum'); if(a!==b) return toast('Les deux mots de passe sont différents');
+  btn.disabled=true; const {error}=await sb.auth.updateUser({password:a}); btn.disabled=false;
+  if(error) return toast(errMsg(error)); closeSheet(); toast('Mot de passe modifié ✅'); history.replaceState(null,'',location.pathname); render(); }
+
 async function logout(){await sb.auth.signOut();user=null;me=null;toast('Déconnecté');go('search');}
 
 async function openChat(bid, other){
@@ -867,7 +899,7 @@ async function openChat(bid, other){
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
-(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); })();
+(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); })();
 </script>
 </body>
 </html>

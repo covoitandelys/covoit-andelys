@@ -285,6 +285,8 @@ async function render(){
       if(seen[k]){ others[seen[k]]=(others[seen[k]]||0)+1; return false; } seen[k]=t.id; return true; }); }
     if (error){ $('#list').innerHTML = `<div class="empty">Erreur de chargement : ${esc(error.message)}</div>`; return; }
     tripsCache = data;
+    if(filter.from||filter.to){ const k=[filter.from,filter.to,filter.date,filter.period].join('|'); window._logged=window._logged||new Set();
+      if(!window._logged.has(k)){ window._logged.add(k); sb.rpc('log_search',{p_from:filter.from||'',p_to:filter.to||'',p_date:filter.date||null,p_period:filter.date?'date':filter.period,p_results:data.length}).then(()=>{},()=>{}); } }
     $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
       (data.map(t=>tripCard(t, user && t.driver_id===user.id ? '<span style="color:var(--m)">Ton trajet</span>' : undefined).replace('<div class="meta">',others[t.id]?`<div class="hint" style="font-weight:700">🔁 Trajet régulier : aussi ${others[t.id]} autre${others[t.id]>1?'s':''} date${others[t.id]>1?'s':''} à la même heure</div><div class="meta">`:'<div class="meta">')).join('') ||
        `<div class="empty">Aucun trajet ${filter.period!=='all'&&!filter.date?'sur cette période':'pour l\'instant'}.${filter.period!=='all'&&!filter.date?`<br><button class="link" onclick="filter.period='all';render()">Voir tous les trajets à venir</button>`:''}<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`) +
@@ -483,7 +485,7 @@ privacy: `<h2>Politique de confidentialité</h2>
 <h4>Qui y a accès</h4>
 <p>Les autres utilisateurs voient votre prénom, vos trajets publiés et votre badge éventuel. Les messages ne sont visibles que par le conducteur et le passager concernés. L'administrateur peut exceptionnellement les consulter, uniquement pour traiter un signalement ou répondre à une demande des autorités. Prestataires techniques : Supabase (hébergement des données, UE), GitHub (hébergement de l'application), Stripe (paiements), Brevo (envoi des e-mails de notification, UE). Aucune donnée n'est vendue ni utilisée à des fins publicitaires.</p>
 <h4>Durée de conservation</h4>
-<p>Tant que le compte est actif, puis suppression dans un délai de 3 ans après la dernière activité. Un journal des trajets et réservations (publication, demande, acceptation, annulation) est tenu pour gérer les litiges. Si vous supprimez votre compte, ou si nous le supprimons, une copie de votre historique (e-mail, trajets, réservations, messages, avis, signalements) est conservée <b>1 an</b>, accessible au seul administrateur, pour la gestion d'éventuels litiges et les demandes des autorités, puis effacée. Les données de paiement sont conservées par Stripe et par Covoit' Andelys pendant la durée légale (10 ans pour les pièces comptables).</p>
+<p>Tant que le compte est actif, puis suppression dans un délai de 3 ans après la dernière activité. Un journal des trajets et réservations (publication, demande, acceptation, annulation) est tenu pour gérer les litiges. Les recherches de trajets faites dans l'application (départ, arrivée, jour souhaité) sont conservées 90 jours, pour repérer les trajets demandés et inciter les conducteurs à les proposer ; elles ne sont jamais publiées avec votre nom. Si vous supprimez votre compte, ou si nous le supprimons, une copie de votre historique (e-mail, trajets, réservations, messages, avis, signalements) est conservée <b>1 an</b>, accessible au seul administrateur, pour la gestion d'éventuels litiges et les demandes des autorités, puis effacée. Les données de paiement sont conservées par Stripe et par Covoit' Andelys pendant la durée légale (10 ans pour les pièces comptables).</p>
 <h4>Vos droits</h4>
 <p>Vous pouvez supprimer votre compte à tout moment dans l'application (Profil → Supprimer mon compte). Vous pouvez accéder à vos données, les rectifier, les supprimer, vous opposer à leur traitement ou demander leur portabilité en écrivant à contact@covoit-andelys.fr. Vous pouvez aussi introduire une réclamation auprès de la CNIL (www.cnil.fr).</p>
 <h4>Cookies</h4>
@@ -672,15 +674,25 @@ async function openAdmin(){
 }
 
 const SLOT={matin:'matin',midi:'midi',soir:'soir',tous:'toute la journée'};
+const SLOT_FB={matin:'le matin',midi:'le midi',soir:'le soir',tous:''};
+function fbPost(de,vers,creneau,n,quand){ de=de||'Les Andelys'; vers=vers||'n\'importe où';
+  const qui = n>1 ? `${n} personnes cherchent` : 'Une personne cherche';
+  const t=`🙋 Avis aux conducteurs !\n\n${qui} un covoiturage :\n📍 ${de} → ${vers}${quand?`\n📅 ${quand}`:SLOT_FB[creneau]?`\n🕐 ${SLOT_FB[creneau]}`:''}\n\n🚗 Vous faites ce trajet ? Publiez-le en 1 minute sur Covoit' Andelys : vous partagez vos frais d'essence et vous rendez service à un voisin.\n👉 https://covoit-andelys.fr\n\n🙏 Vous ne conduisez pas ? Partagez ce post, le bon conducteur est peut-être dans vos contacts !\n\nL'équipe Covoit' Andelys\n#covoiturage #LesAndelys #Eure #entraide`;
+  const done=()=>toast('Texte copié 📋 Colle-le dans une publication Facebook');
+  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(t).then(done,()=>showFbText(t)); else showFbText(t); }
+function showFbText(t){ sheet(`<h2>📣 Post Facebook</h2><div class="hint">Appui long → Tout sélectionner → Copier</div><textarea rows="12" style="width:100%">${esc(t)}</textarea><button class="btn sec" onclick="openAdmin()">Retour</button>`); }
 async function loadDemand2(){ const el=$('#adem'); if(!el) return; const {data,error}=await sb.rpc('admin_demand');
   if(error){ el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   const d=data||{}, dt=x=>new Date(x).toLocaleString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}), dd=x=>new Date(x).toLocaleDateString('fr-FR');
   const who=(n,id)=>`<button class="link" style="font-size:inherit" onclick="openHistory('${id}','${esc(n||'')}')">${esc(n||'?')}</button>`;
   const box=(t,n,body)=>`<details style="margin-top:6px" ${n?'':''}><summary style="cursor:pointer;font-weight:700;padding:6px 0">${t} <span class="tag">${n}</span></summary>${body}</details>`;
-  const top=(d.top||[]); const al=(d.alertes||[]), at=(d.attente||[]), av=(d.avenir||[]);
+  const top=(d.top||[]); const al=(d.alertes||[]), at=(d.attente||[]), av=(d.avenir||[]), rs=(d.recherches||[]);
+  const PER={today:'aujourd\'hui',tomorrow:'demain','7':'les 7 prochains jours',all:'n\'importe quand'};
+  const rsHtml = rs.length ? rs.map(x=>{ const quand=x.jour?whenText(x.jour):''; return `<div class="meta" style="display:block">${x.uid?who(x.prenom,x.uid):'<i>visiteur</i>'} · <small style="color:var(--m)">${dt(x.le)}</small><br>${esc(x.de||'Partout')} → ${esc(x.vers||'Partout')}<br>📅 ${esc(quand||PER[x.periode]||'')} · ${x.resultats?`<span style="color:var(--g)">${x.resultats} trajet${x.resultats>1?'s':''} trouvé${x.resultats>1?'s':''}</span>`:'<b style="color:#b91c1c">aucun trajet trouvé</b>'}${x.resultats?'':`<br><button class="btn small sec" style="margin-top:4px" onclick="fbPost('${esc(x.de||'')}','${esc(x.vers||'')}','tous',1,'${esc(quand||(x.periode==='today'?'aujourd\'hui':x.periode==='tomorrow'?'demain':''))}')">📣 Préparer un post Facebook</button>`}</div>`; }).join('') : '<div class="hint">Aucune recherche notée pour l\'instant.</div>';
   el.innerHTML=
-    box('📊 Trajets les plus recherchés', top.length, top.length?top.map(x=>`<div class="meta"><span>${esc(x.de)} → ${esc(x.vers)}</span><b>${x.n} alerte${x.n>1?'s':''}</b></div>`).join('')+'<div class="hint">💡 Partage ces trajets aux conducteurs (annonce 📢 ou e-mail) : ce sont des passagers qui attendent.</div>':'<div class="hint">Aucune alerte pour l\'instant.</div>')
-   +box('🔔 Alertes des membres', al.length, al.length?al.map(x=>`<div class="meta" style="display:block">${who(x.prenom,x.uid)} <small style="color:var(--m)">${esc(x.email||'')}</small><br>${esc(x.de||'Partout')} → ${esc(x.vers||'Partout')} · ${SLOT[x.creneau]||x.creneau}<br><small style="color:var(--m)">créée le ${dd(x.le)}${x.derniere?` · dernier trajet trouvé le ${dd(x.derniere)}`:' · aucun trajet trouvé pour l\'instant'}</small></div>`).join(''):'<div class="hint">Aucune alerte.</div>')
+    box('📊 Trajets les plus recherchés', top.length, top.length?top.map(x=>`<div class="meta"><span>${esc(x.de)} → ${esc(x.vers)}<br><b>${x.n} alerte${x.n>1?'s':''}</b></span><button class="btn small sec" onclick="fbPost('${esc(x.de==='Partout'?'':x.de)}','${esc(x.vers==='Partout'?'':x.vers)}','tous',${x.n})">📣 Post FB</button></div>`).join('')+'<div class="hint">💡 Partage ces trajets aux conducteurs (annonce 📢 ou e-mail) : ce sont des passagers qui attendent.</div>':'<div class="hint">Aucune alerte pour l\'instant.</div>')
+   +box('🔎 Recherches récentes', rs.filter(x=>!x.resultats).length+' sans résultat', rsHtml+'<div class="hint">Les recherches « aucun trajet trouvé » sont des passagers qui attendent un conducteur : publie au bon moment, la veille ou le matin même.</div>')
+   +box('🔔 Alertes des membres', al.length, al.length?al.map(x=>`<div class="meta" style="display:block">${who(x.prenom,x.uid)} <small style="color:var(--m)">${esc(x.email||'')}</small><br>${esc(x.de||'Partout')} → ${esc(x.vers||'Partout')}<br>📅 ${esc(whenText(x.jour,x.jours,x.heure,x.creneau)||'n\'importe quand')}<br><small style="color:var(--m)">créée le ${dd(x.le)}${x.derniere?` · dernier trajet trouvé le ${dd(x.derniere)}`:' · aucun trajet trouvé pour l\'instant'}</small><br><button class="btn small sec" style="margin-top:4px" onclick="fbPost('${esc(x.de||'')}','${esc(x.vers||'')}','${x.creneau}',1,'${esc(whenText(x.jour,x.jours,x.heure,x.creneau))}')">📣 Préparer un post Facebook</button></div>`).join(''):'<div class="hint">Aucune alerte.</div>')
    +box('⏳ Demandes en attente du conducteur', at.length, at.length?at.map(x=>`<div class="meta" style="display:block">${who(x.passager,x.puid)} → conducteur ${who(x.conducteur,x.duid)}<br>${esc(x.de)} → ${esc(x.vers)} · ${dt(x.depart)} · ${x.places} pl.<br><small style="color:var(--m)">demandée le ${dt(x.le)}</small></div>`).join('')+'<div class="hint">💡 Une demande qui traîne ? Relance le conducteur par e-mail.</div>':'<div class="hint">Aucune demande en attente.</div>')
    +box('✅ Réservations à venir', av.length, av.length?av.map(x=>`<div class="meta" style="display:block">${who(x.passager,x.puid)} avec ${who(x.conducteur,x.duid)}<br>${esc(x.de)} → ${esc(x.vers)} · ${dt(x.depart)} · ${x.places} pl.<br><small style="color:var(--m)">${x.paye?'💳 payé':x.moyen==='cash'?'💶 espèces prévues':x.moyen==='paypal'?'🅿️ PayPal prévu':x.moyen==='card'?'💳 carte prévue':'paiement non choisi'}</small></div>`).join(''):'<div class="hint">Aucune réservation à venir.</div>'); }
 function selFiltered(){ const rows=openAdmin._rows?openAdmin._rows():[]; rows.forEach(u=>{ if(u.email && !u.blocked) mailSel.add(u.email); });
@@ -772,24 +784,40 @@ async function installApp(){
 }
 
 /* ======== Alertes trajet ======== */
+const DAYS=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'], DAYS_L=['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'];
+function whenText(jour, jours, heure, creneau){ const parts=[];
+  if(jour) parts.push(new Date(jour+'T12:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}));
+  else if(jours?.length) parts.push(jours.length===5&&[1,2,3,4,5].every(d=>jours.includes(d))?'du lundi au vendredi':jours.length===7?'tous les jours':'le '+jours.map(d=>DAYS_L[d-1]).join(', '));
+  if(heure) parts.push('vers '+String(heure).slice(0,5).replace(':','h'));
+  else if(creneau&&creneau!=='tous') parts.push({matin:'le matin',midi:'en journée',soir:'le soir'}[creneau]||'');
+  return parts.filter(Boolean).join(' · '); }
 const SLOTS={tous:'À toute heure',matin:'Le matin (5h-10h)',midi:'En journée (10h-14h)',soir:'Le soir (14h-22h)'};
 function openAlert(){
   if(!user) return go('profile');
   sheet(`<h2>🔔 Alerte trajet</h2><div class="hint">Tu reçois une notification et un e-mail dès qu'un trajet correspondant est publié.</div>
     <label>Départ</label>${placeInput('alf',filter.from||'Les Andelys','Partout')}
     <label>Arrivée</label>${placeInput('alt',filter.to||'','Partout')}
-    <label>Horaire</label><select id="als">${Object.entries(SLOTS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+    <label>Quel jour ?</label><select id="alj" onchange="$('#alja').style.display=this.value==='date'?'block':'none';$('#aljb').style.display=this.value==='days'?'flex':'none'">
+      <option value="all">N'importe quel jour</option><option value="date">Une date précise</option><option value="days">Certains jours de la semaine</option></select>
+    <input type="date" id="alja" style="display:none;margin-top:6px" value="${filter.date||''}" min="${new Date().toISOString().slice(0,10)}">
+    <div class="chips" id="aljb" style="display:none">${DAYS.map((d,i)=>`<button type="button" class="chip" data-d="${i+1}" onclick="this.classList.toggle('on')">${d}</button>`).join('')}</div>
+    <div class="row"><div><label>Horaire</label><select id="als">${Object.entries(SLOTS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div><label>Heure (facultatif)</label><input type="time" id="alh"></div></div>
     <button class="btn" onclick="saveAlert(this)">Créer l'alerte</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`);
   wirePlace('alf'); wirePlace('alt');
 }
 async function saveAlert(btn){ btn.disabled=true;
   const f=$('#alf').value.trim()?await resolvePlace($('#alf').value):'', t=$('#alt').value.trim()?await resolvePlace($('#alt').value):'';
   if(f===null||t===null){btn.disabled=false;return toast('Commune introuvable : choisis-la dans les suggestions');}
-  const {error}=await sb.from('trip_alerts').insert({from_place:f||null,to_place:t||null,slot:$('#als').value});
+  const mode=$('#alj').value, days=[...document.querySelectorAll('#aljb .chip.on')].map(b=>+b.dataset.d);
+  if(mode==='date'&&!$('#alja').value){btn.disabled=false;return toast('Choisis la date');}
+  if(mode==='days'&&!days.length){btn.disabled=false;return toast('Choisis au moins un jour');}
+  const {error}=await sb.from('trip_alerts').insert({from_place:f||null,to_place:t||null,slot:$('#als').value,
+    alert_date:mode==='date'?$('#alja').value:null, alert_days:mode==='days'?days:null, alert_time:$('#alh').value||null});
   if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Alerte créée 🔔'); if(tab==='profile') loadAlerts(); }
 async function loadAlerts(){ const el=$('#alerts'); if(!el) return;
   const {data}=await sb.from('trip_alerts').select('*').order('created_at');
-  el.innerHTML=(data||[]).map(a=>`<div class="meta"><span>${esc(a.from_place||'Partout')} → ${esc(a.to_place||'Partout')}<br><small class="hint">${SLOTS[a.slot]}</small></span><button class="btn small sec" onclick="delAlert(${a.id})">Supprimer</button></div>`).join('')||'<div class="hint">Aucune alerte. Crée-en une pour être prévenu des nouveaux trajets.</div>'; }
+  el.innerHTML=(data||[]).map(a=>`<div class="meta"><span>${esc(a.from_place||'Partout')} → ${esc(a.to_place||'Partout')}<br><small class="hint">${esc(whenText(a.alert_date,a.alert_days,a.alert_time,a.slot)||SLOTS[a.slot])}</small></span><button class="btn small sec" onclick="delAlert(${a.id})">Supprimer</button></div>`).join('')||'<div class="hint">Aucune alerte. Crée-en une pour être prévenu des nouveaux trajets.</div>'; }
 async function delAlert(id){ await sb.from('trip_alerts').delete().eq('id',id); loadAlerts(); }
 
 /* ======== Avis ======== */

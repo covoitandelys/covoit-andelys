@@ -57,6 +57,7 @@ nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 .mode button{flex:1;border:0;background:none;color:#fff;font:inherit;font-weight:800;font-size:15px;padding:9px 6px;border-radius:99px;cursor:pointer;position:relative}
 .mode button.on{background:#fff;color:var(--g)}.mode .dot{position:absolute;top:2px;right:10px}
 .msg small{display:block;font-size:11px;opacity:.7}h3{margin:4px 0 8px}
+.feedb{position:fixed;left:50%;transform:translate(-50%,20px);bottom:calc(84px + env(safe-area-inset-bottom));width:calc(100% - 24px);max-width:456px;background:#0f172a;color:#fff;border-radius:16px;padding:12px 40px 12px 14px;font-size:14px;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:15;opacity:0;transition:opacity .3s,transform .3s;cursor:pointer}.feedb.on{opacity:1;transform:translate(-50%,0)}.feedb b{display:block}.feedb small{opacity:.85}.feedb button{position:absolute;top:6px;right:6px;background:none;border:0;color:#fff;font-size:17px;padding:6px;cursor:pointer}
 .annc{position:relative;background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:12px 40px 12px 14px;margin:10px 12px 0;font-size:14px;line-height:1.45;color:#78350f}.annc b{display:block;margin-bottom:2px}.annc button{position:absolute;top:6px;right:6px;background:none;border:0;font-size:18px;color:#92400e;padding:6px;cursor:pointer}
 .legal h2{margin:0 0 8px}.legal h4{margin:16px 0 4px;color:var(--g)}.legal p,.legal li{font-size:14px;line-height:1.5}.legal ul{padding-left:18px;margin:4px 0}
 </style>
@@ -76,6 +77,7 @@ nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 </nav>
 <div class="bg" id="bg"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
+<div class="feedb" id="feedb"></div>
 
 <script>
 /* ======== CONFIGURATION : colle ici tes 2 valeurs Supabase (Project Settings > API) ======== */
@@ -400,6 +402,7 @@ async function render(){
         <div class="hint" id="nstate">Reçois une alerte sur ton téléphone pour les demandes, réponses, messages et nouveaux trajets.</div>
         <button class="btn" id="nbtn" onclick="enablePush()">🔔 Activer les notifications</button>
         <button class="btn sec" id="ibtn" onclick="installApp()">📲 Installer l'appli sur mon téléphone</button>
+        <label style="display:flex;align-items:flex-start;gap:10px;color:var(--t);font-size:15px;margin-top:12px"><input type="checkbox" id="nfeed" style="width:22px;height:22px;flex:none;margin-top:1px" ${feedOn()?'checked':''} onchange="setFeed(this)"> <span><b>Bulles d'activité</b><br><small style="color:var(--m)">Petits messages dans l'appli : nouveaux trajets, départs imminents vers les gares, nouveaux membres.</small></span></label>
         <h3 style="margin-top:16px">Mes alertes trajet</h3><div id="alerts"><div class="hint">Chargement…</div></div>
         <button class="btn sec small" onclick="openAlert()">+ Nouvelle alerte</button></div>
       <div class="card"><h3>💳 Paiement par carte</h3>${me?.stripe_ready
@@ -806,6 +809,29 @@ async function doWarn(id,btn){ const m=$('#wmsg').value.trim(); if(m.length<5) r
   const {error}=await sb.rpc('admin_warn_report',{rid:id,p_msg:m}); if(error){ btn.disabled=false; return toast(errMsg(error)); }
   toast('Avertissement envoyé ⚠️'); openAdmin(); }
 
+/* ======== Bulles d'activité de la communauté ======== */
+let FEEDQ=[], feedBusy=false, feedTimer=null;
+function feedOn(){ try{ return localStorage.getItem('covoit_feed')!=='off'; }catch(e){ return true; } }
+function setFeed(cb){ try{ localStorage.setItem('covoit_feed', cb.checked?'on':'off'); }catch(e){} toast(cb.checked?'Bulles d\'activité activées':'Bulles d\'activité désactivées'); }
+async function loadFeed(){
+  if(!feedOn() || document.hidden) return;
+  let last=0; try{ last=+(localStorage.getItem('covoit_feed_last')||0); }catch(e){}
+  const since=new Date(Date.now()-6*36e5).toISOString();
+  const {data}=await sb.from('community_feed').select('id,kind,title,body,trip_id,actor,created_at').gt('id',last).gt('created_at',since).order('id',{ascending:true}).limit(20);
+  if(!data?.length) return;
+  try{ localStorage.setItem('covoit_feed_last', String(data[data.length-1].id)); }catch(e){}
+  const fresh=data.filter(f=>!user||f.actor!==user.id).filter(f=>f.kind!=='imminent'||Date.now()-new Date(f.created_at)<30*6e4);
+  FEEDQ.push(...fresh.slice(-3)); showFeed(); }
+function showFeed(){
+  if(feedBusy || !FEEDQ.length) return; const f=FEEDQ.shift(), el=$('#feedb'); if(!el) return; feedBusy=true;
+  el.innerHTML=`<b>${esc(f.title)}</b>${f.body?`<small>${esc(f.body)}</small>`:''}${f.trip_id?'<small style="display:block;margin-top:2px;text-decoration:underline">Voir le trajet →</small>':''}<button aria-label="Fermer" onclick="event.stopPropagation();hideFeed()">✕</button>`;
+  el.onclick=()=>{ hideFeed(); if(f.trip_id) openFeedTrip(f.trip_id); };
+  requestAnimationFrame(()=>el.classList.add('on')); clearTimeout(feedTimer); feedTimer=setTimeout(hideFeed, 7000); }
+function hideFeed(){ const el=$('#feedb'); if(el) el.classList.remove('on'); clearTimeout(feedTimer); setTimeout(()=>{ feedBusy=false; showFeed(); }, 600); }
+async function openFeedTrip(id){ if(mode!=='passenger' && typeof setMode==='function') setMode('passenger'); go('search');
+  for(let i=0;i<20;i++){ await new Promise(r=>setTimeout(r,250)); if(typeof tripsCache!=='undefined' && tripsCache.find(x=>x.id===id)) return openTrip(id); }
+  toast('Ce trajet n\'est plus disponible'); }
+
 /* ======== Annonces (messages éphémères) ======== */
 let ANNC=[];
 const ANN_AUD={all:'Tout le monde',drivers:'Conducteurs',passengers:'Passagers',new:'Nouveaux inscrits (7 j)',unverified:'Non vérifiés'};
@@ -1041,7 +1067,7 @@ async function openChat(bid, other){
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
-(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured) loadAnnc(); })();
+(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadAnnc(); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
 </script>
 </body>
 </html>

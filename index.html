@@ -162,7 +162,7 @@ function quickDepart(min){ const d=new Date(Date.now()+min*6e4); d.setMinutes(Ma
   $('#od').value=new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10); $('#oh').value=hm(d);
   $('#oi')?.classList.add('on'); document.querySelectorAll('.qd').forEach(b=>b.classList.toggle('on', +b.dataset.m===min));
   toast('Départ à '+hm(d)+' · réservation instantanée activée ⚡'); }
-const soonText = d => { const m=Math.round((d-Date.now())/6e4); return m<=0?'Part maintenant':m<60?`Part dans ${m} min`:m<120?`Part dans 1 h ${String(m-60).padStart(2,'0')}`:''; };
+const soonText = d => { const m=Math.round((d-Date.now())/6e4); return m<-30?'':m<=0?'Part maintenant':m<60?`Part dans ${m} min`:m<120?`Part dans 1 h ${String(m-60).padStart(2,'0')}`:''; };
 const nextHour = () => String((new Date().getHours()+1)%24).padStart(2,'0')+':00';
 const today = () => { const d=new Date(); return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10); };
 const av = (n, url, sz) => { const st=sz?`width:${sz}px;height:${sz}px;font-size:${Math.round(sz*0.4)}px;`:''; return url ? `<img class="av" src="${esc(url)}" alt="" style="${st}object-fit:cover">` : `<span class="av" style="${st}background:${COLORS[(n||'?').charCodeAt(0)%COLORS.length]}">${esc((n||'?')[0].toUpperCase())}</span>`; };
@@ -376,20 +376,26 @@ async function render(){
     const canRate = (b,t) => b.status==='accepted' && new Date(t.depart_at)<new Date() && !reviewed.has(b.id);
     const plates = {}; const accIds=[...new Set(myB.filter(b=>b.status==='accepted').map(b=>b.trip.driver_id))];
     if(accIds.length){ const {data:pl}=await sb.from('driver_private').select('user_id,car_plate').in('user_id',accIds); (pl||[]).forEach(r=>plates[r.user_id]=r.car_plate); }
-    const passengerHTML = `<h3 style="margin:4px">Mes réservations</h3>` +
-      (myB.map(b=>{ const d=b.trip.driver||{}, amt=b.trip.price*b.seats;
-        return tripCard(b.trip, `<span><button class="btn small sec" onclick="openChat('${b.id}','${esc(d.first_name||'')}')">💬${unreadDot(b.id)}</button> <button class="btn small sec" onclick="cancelB('${b.id}')">Annuler</button></span>`) +
+    const isPast = t => new Date(t.depart_at) < new Date(Date.now()-30*6e4);
+    const pastBox = (html,n) => n ? `<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;padding:8px 4px;color:var(--m)">🕘 Trajets passés (${n})</summary>${html}</details>` : '';
+    const bCard = b=>{ const d=b.trip.driver||{}, amt=b.trip.price*b.seats, past=isPast(b.trip);
+        return tripCard(b.trip, `<span><button class="btn small sec" onclick="openChat('${b.id}','${esc(d.first_name||'')}')">💬${unreadDot(b.id)}</button>${past?'':` <button class="btn small sec" onclick="cancelB('${b.id}')">Annuler</button>`}</span>`) +
         `<div class="card" style="margin-top:-8px"><div class="meta" style="border:0;margin:0;padding:0"><span>${STATUS[b.status]||''} · ${b.seats} pl.${b.children?` (dont ${b.children} enfant${b.children>1?'s':''})`:''} · <b>${eur(amt)}</b></span>
          ${b.paid ? '<span class="tag t-ok">💳 Payé</span>' : ''}</div>
-         ${b.status==='accepted' && !b.paid ? payChoice(b, d, amt) : ''}
-         ${b.status==='accepted' && (plates[b.trip.driver_id]||carText(d)) ? `<div class="note">🚗 Ton véhicule : <b>${carText(d)||'—'}</b>${plates[b.trip.driver_id]?` · plaque <b>${esc(plates[b.trip.driver_id])}</b>`:''}</div>` : ''}
+         ${b.status==='accepted' && !b.paid && !past ? payChoice(b, d, amt) : ''}
+         ${past ? `<div class="hint">${b.status==='accepted'?'✔️ Trajet effectué':'Trajet passé'}</div>` : ''}
+         ${b.status==='accepted' && !past && (plates[b.trip.driver_id]||carText(d)) ? `<div class="note">🚗 Véhicule du conducteur : <b>${carText(d)||'—'}</b>${plates[b.trip.driver_id]?` · plaque <b>${esc(plates[b.trip.driver_id])}</b>`:''}</div>` : ''}
          ${canRate(b,b.trip)?`<button class="btn small" style="margin-top:6px" onclick="openReview('${b.id}','${esc(d.first_name||'le conducteur')}')">⭐ Noter ${esc(d.first_name||'le conducteur')}</button>`:''}
-         <div class="hint">${b.status==='pending' ? 'Le conducteur doit accepter ta demande.' : b.status==='refused' ? 'Le conducteur a refusé cette demande.' : b.paid ? 'Paiement reçu, merci ! Bon trajet 🚗' : ''}</div></div>`;
-      }).join('') || `<div class="empty">Aucune réservation.<br><br><button class="btn sec" onclick="go('search')">Rechercher un trajet</button></div>`);
+         ${past?'':`<div class="hint">${b.status==='pending' ? 'Le conducteur doit accepter ta demande.' : b.status==='refused' ? 'Le conducteur a refusé cette demande.' : b.paid ? 'Paiement reçu, merci ! Bon trajet 🚗' : ''}</div>`}</div>`; };
+    const upB = myB.filter(b=>!isPast(b.trip)).sort((a,c)=>new Date(a.trip.depart_at)-new Date(c.trip.depart_at)), pastB = myB.filter(b=>isPast(b.trip)).sort((a,c)=>new Date(c.trip.depart_at)-new Date(a.trip.depart_at));
+    const passengerHTML = `<h3 style="margin:4px">Mes réservations</h3>` +
+      (upB.map(bCard).join('') || (myB.length?'<div class="empty">Aucune réservation à venir.<br><br><button class="btn sec" onclick="go(\'search\')">Rechercher un trajet</button></div>':'')) + pastBox(pastB.map(bCard).join(''), pastB.length) +
+      (myB.length ? '' : `<div class="empty">Aucune réservation.<br><br><button class="btn sec" onclick="go('search')">Rechercher un trajet</button></div>`);
     const driverHTML = `<h3 style="margin:4px">Mes trajets proposés</h3>` +
-      ((mt.data||[]).map(t => tripCard({...t, driver:me}, `<button class="btn small sec" onclick="delTrip('${t.id}')">Supprimer</button>`) +
+      (((mt.data||[]).filter(t=>!isPast(t)).length || !(mt.data||[]).length) ? '' : '<div class="empty">Aucun trajet à venir.<br><br><button class="btn sec" onclick="go(\'offer\')">Proposer un trajet</button></div>') +
+      [(mt.data||[]).filter(t=>!isPast(t)), (mt.data||[]).filter(t=>isPast(t)).reverse()].map((lst,ip)=>{ const h=lst.map(t => tripCard({...t, driver:me}, ip?'<span class="tag">✔️ Passé</span>':`<button class="btn small sec" onclick="delTrip('${t.id}')">Supprimer</button>`) +
         (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${b.seats} pl.${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}${b.passenger?.created_at?`<br><small style="color:var(--m)">${sinceText(b.passenger.created_at)}</small>`:''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Payé</span>':b.status==='accepted'&&b.pay_method?` <span class="tag">${b.pay_method==='cash'?'💶 Paiera en espèces':b.pay_method==='paypal'?'🅿️ Paiera par PayPal':'💳 Paiera par carte'}</span>`:''}${canRate(b,t)?` <button class="btn small" onclick="openReview('${b.id}','${esc(b.passenger?.first_name||'')}')">⭐ Noter</button>`:''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${esc(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}</div>` : '')
-      ).join('') || `<div class="empty">Aucun trajet proposé.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`);
+      ).join(''); return ip?pastBox(h,lst.length):h; }).join('') + ((mt.data||[]).length ? '' : `<div class="empty">Aucun trajet proposé.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`);
     v.innerHTML = mode==='driver' ? driverHTML : passengerHTML;
     if((notif.new_bookings||notif.responses) && !(mode==='passenger'&&notif.new_bookings) && !(mode==='driver'&&notif.responses)){ await sb.rpc('mark_mine_seen'); if(me) me.mine_seen_at=new Date().toISOString(); refreshNotif(); }
   }

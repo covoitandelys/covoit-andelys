@@ -173,7 +173,11 @@ const sinceText = d => { if(!d) return ''; const n=Math.floor((Date.now()-new Da
 const seatsText = (left,total) => left>0 ? `👥 ${left} place${left>1?'s':''} disponible${left>1?'s':''} sur ${total}` : `👥 Complet (${total} place${total>1?'s':''})`;
 const badge = d => d?.verified ? '<span class="tag t-ok">✓ Vérifié</span>' : d?.stripe_ready ? '<span class="tag" style="background:#e0e7ff;color:#3730a3">🪪 Identité vérifiée</span>' : '';
 const stars = d => d?.rating_count ? `<span class="rate">⭐ ${String(d.rating_avg).replace('.',',')} (${d.rating_count})</span>` : '';
-const carText = d => [d?.car_model, d?.car_color].filter(Boolean).map(esc).join(' · ');
+const CERT_V='c1', ACK_V='p1';
+const CERT_TXT="Je certifie avoir 18 ans ou plus, un permis de conduire valide (sauf voiturette sans permis), une assurance et un contrôle technique à jour, et, s'il s'agit d'un véhicule de société ou de service, l'accord de mon employeur.";
+const ACK_TXT="J'ai compris que ce conducteur n'a pas encore fait vérifier ses documents. Je peux lui demander de me montrer son permis et son attestation d'assurance avant de partir.";
+const isMicro = m => /\b(ami|aixam|ligier|microcar|chatenet|bellier|casalini|minauto|jdm|vsp)\b|sans ?permis|voiturette/i.test(m||'');
+const carText = d => [d?.car_model, d?.car_color].filter(Boolean).map(esc).join(' · ') + (isMicro(d?.car_model)?' · 🚙 voiturette sans permis (45 km/h max)':'');
 function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',Math.max(2600,m.length*60));}
 const opts = (sel,blank) => (blank?`<option value="">${blank}</option>`:'')+NAMES.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('');
 function addEyes(root){ (root||document).querySelectorAll('input[type=password]:not([data-eye])').forEach(i=>{ i.dataset.eye=1;
@@ -247,7 +251,7 @@ function tripCard(t, actions){
    <div class="times">${hm(d)}<small>${hm(new Date(d.getTime()+dur(k)*6e4))}</small></div>
    <div class="route"><b>${esc(t.from_place)}</b><span>↓ ${k} km · ~${dur(k)} min</span><b>${esc(t.to_place)}</b></div>
    <div class="price">${eur(t.price)}<small>par place</small></div></div>
-   <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)} · `:''}${tripOpts(t)}</div>
+   <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)} · `:''}${tripOpts(t)}</div>${t._ret?`<div class="hint" style="color:var(--g);font-weight:700;margin-top:2px">↩️ Retour possible le même jour à ${t._ret}</div>`:''}
    ${t.meeting_point||t.meet_lat?`<div class="hint">📍 RDV : ${esc(t.meeting_point||'point sur la carte')}${t.meet_lat?` · <a href="${gmapsUrl(t)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🗺️ Itinéraire</a>`:''}</div>`:''}
    <div class="hint" style="font-weight:700;color:${left>0?'var(--g)':'#b91c1c'}">${seatsText(left,t.seats)}</div>
    ${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}
@@ -305,6 +309,12 @@ async function render(){
       if(seen[k]){ others[seen[k]]=(others[seen[k]]||0)+1; return false; } seen[k]=t.id; return true; }); }
     if (error){ $('#list').innerHTML = `<div class="empty">Erreur de chargement : ${esc(error.message)}</div>`; return; }
     tripsCache = data;
+    try{ const ids=[...new Set(data.map(t=>t.driver_id))];
+      if(ids.length){ const last=new Date(Math.max(...data.map(t=>+new Date(t.depart_at)))+864e5);
+        const {data:rv}=await sb.from('trips').select('id,driver_id,from_place,to_place,depart_at').in('driver_id',ids).gte('depart_at',new Date().toISOString()).lt('depart_at',last.toISOString());
+        const dk=x=>new Date(x).toDateString();
+        data.forEach(t=>{ const r=(rv||[]).filter(r=>r.driver_id===t.driver_id&&r.from_place===t.to_place&&r.to_place===t.from_place&&dk(r.depart_at)===dk(t.depart_at)&&new Date(r.depart_at)>new Date(t.depart_at)).sort((a,b)=>new Date(a.depart_at)-new Date(b.depart_at))[0];
+          if(r) t._ret=hm(new Date(r.depart_at)); }); } }catch(e){}
     if(filter.from||filter.to){ const k=[filter.from,filter.to,filter.date,filter.period].join('|'); window._logged=window._logged||new Set();
       if(!window._logged.has(k)){ window._logged.add(k); sb.rpc('log_search',{p_from:filter.from||'',p_to:filter.to||'',p_date:filter.date||null,p_period:filter.date?'date':filter.period,p_results:data.length}).then(()=>{},()=>{}); } }
     $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
@@ -323,6 +333,8 @@ async function render(){
      <div class="row"><div><label>Date</label><input type="date" id="od" value="${today()}" min="${today()}"></div>
      <div><label>Heure</label><input type="time" id="oh" value="${nextHour()}"></div></div>
      <div class="chips"><button class="chip" id="orc" type="button" onclick="this.classList.toggle('on');$('#orp').style.display=this.classList.contains('on')?'':'none'">🔁 Trajet régulier</button></div>
+     <div class="chips" style="margin-top:6px"><button class="chip" id="oretc" type="button" onclick="this.classList.toggle('on');$('#oretp').style.display=this.classList.contains('on')?'':'none'">↩️ Je fais aussi le retour</button></div>
+     <div id="oretp" style="display:none" class="note">Heure du retour (même jour, trajet inverse) :<input type="time" id="oret" value="17:30" style="margin-top:6px"><div class="hint">Le retour est publié en même temps, avec les mêmes places, options et prix (sans le point de rendez-vous ni le message). Les passagers voient « ↩️ Retour possible ».</div></div>
      <div id="orp" style="display:none" class="note">Répéter ce trajet chaque :<div class="chips">${['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map((j,i)=>`<button class="chip ord${i<5?' on':''}" type="button" data-d="${(i+1)%7}" onclick="this.classList.toggle('on')">${j}</button>`).join('')}</div>
        <label>Pendant</label><select id="orw"><option value="1">1 semaine</option><option value="2" selected>2 semaines</option><option value="4">4 semaines</option></select>
        <div class="hint">Un trajet est publié pour chaque jour choisi, à la même heure. Tu peux en supprimer un à tout moment.</div></div>
@@ -339,6 +351,8 @@ async function render(){
      <div class="hint">Sans « instantanée », tu reçois une demande et tu acceptes ou refuses chaque passager.</div>
      <div class="note">⚖️ Covoiturage = <b>partage des frais</b>. Uniquement des trajets que tu fais <b>pour toi-même</b>, prix plafonné, ${MAX_DAY} trajets max par jour. Le trajet est toujours non-fumeur.</div>
      ${me?.verified?'':`<div class="note warn">🪪 <b>Ton profil n'est pas encore vérifié.</b> Tes trajets affichent « Profil non vérifié » : les passagers réservent bien plus volontiers avec un conducteur ✓ Vérifié. <button class="link" onclick="go('profile');setTimeout(()=>$('#vcard')?.scrollIntoView({block:'center'}),600)">Obtenir le badge (2 min)</button></div>`}
+     ${isMicro(me?.car_model)?'<div class="note">🚙 <b>Voiturette sans permis :</b> 1 passager maximum, trajets locaux uniquement (45 km/h, pas de voie rapide).</div>':''}
+     ${me?.verified?'':`<label style="display:flex;align-items:flex-start;gap:10px;color:var(--t);font-size:14px;margin-top:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:12px"><input type="checkbox" id="ocert" style="width:22px;height:22px;flex:none;margin-top:1px"> <span>✍️ ${CERT_TXT}</span></label>`}
      <button class="btn" id="pub" onclick="publish()">Publier le trajet</button></div>`;
     const upd = () => { const a=$('#of').value,b=$('#ot').value,s=+$('#os').value;
       if (!PLACES[a]||!PLACES[b]){ $('#oh2').textContent='Choisis le départ et l\'arrivée pour calculer le prix.'; return; }
@@ -536,6 +550,8 @@ function openTrip(id){
     <div class="hint" id="bkh" style="display:none">Un enfant voyage toujours <b>accompagné d'un adulte</b>. Pense à apporter le <b>siège auto ou rehausseur</b> adapté (obligatoire pour les moins de 10 ans).</div>
     <div class="note" id="btot"></div>
     <div id="drev"></div>
+    ${t._ret?`<div class="hint" style="color:var(--g);font-weight:700">↩️ Retour possible le même jour à ${t._ret} avec ${esc(t.driver?.first_name||'ce conducteur')} : réserve-le aussi dans la liste.</div>`:''}
+    ${t.driver?.verified?'':`<label style="display:flex;align-items:flex-start;gap:10px;color:var(--t);font-size:14px;margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:12px"><input type="checkbox" id="back" style="width:22px;height:22px;flex:none;margin-top:1px"> <span>⚠️ ${ACK_TXT}</span></label>`}
     <button class="btn" id="bgo" onclick="book('${id}')">${t.instant?'⚡ Réserver':'Demander une place'}</button><button class="btn sec" onclick="closeSheet()">Fermer</button>`);
   const tot=()=>$('#btot').innerHTML=`Total : <b>${eur(t.price*$('#bn').value)}</b>, à régler au conducteur.<br>${payText(t.driver||{})}${t.instant?'':'<br>Le conducteur doit accepter ta demande.'}`;
   const kids=()=>{const n=+$('#bn').value, k=$('#bk'), cur=Math.min(+k.value||0,n-1);
@@ -551,7 +567,9 @@ function openTrip(id){
     el.textContent=`${sinceText(data.since||t.driver?.created_at)} · ${data.trips} trajet${data.trips>1?'s':''} effectué${data.trips>1?'s':''} · ${data.passengers} passager${data.passengers>1?'s':''}`; });
 }
 let bookInstant=false;
-async function book(id){$('#bgo').disabled=true;const {error}=await sb.from('bookings').insert({trip_id:id,seats:+$('#bn').value,children:+($('#bk')?.value||0)});
+async function book(id){ const tt=tripsCache.find(x=>x.id===id); const unv=!tt?.driver?.verified;
+  if(unv && !$('#back')?.checked) return toast('Coche la case de mise en garde pour réserver');
+  $('#bgo').disabled=true;const {error}=await sb.from('bookings').insert({trip_id:id,seats:+$('#bn').value,children:+($('#bk')?.value||0),...(unv?{ack_v:ACK_V}:{})});
   if(error){$('#bgo').disabled=false;return toast(errMsg(error));} closeSheet(); toast(bookInstant?'Place réservée ✅':'Demande envoyée ⏳ Le conducteur va te répondre'); go('mine');
   if(!fbAsked()) setTimeout(()=>sheet(`<h2>Merci ! 🙏</h2><div class="hint">Covoit' Andelys grandit grâce au bouche-à-oreille. Suis notre page Facebook et partage-la à tes voisins et collègues : plus on est nombreux, plus il y a de trajets.</div>${fbButton()}<button class="btn sec" onclick="try{localStorage.setItem('covoit_fb','later')}catch(e){};closeSheet()">Plus tard</button>`),1500);}
 async function respond(id, ok){const {error}=await sb.rpc('respond_booking',{b:id,accept:ok}); if(error)return toast(errMsg(error)); toast(ok?'Passager accepté ✅':'Demande refusée'); render();}
@@ -573,12 +591,19 @@ async function publish(){
     for(let i=0;i<n;i++){ const d=new Date(depart); d.setDate(depart.getDate()+i); if(days.includes(d.getDay()) && d>new Date()) dates.push(d); }
     if(!dates.length) return toast('Aucune date à venir pour ces jours');
   }
+  if(!me?.verified && !$('#ocert')?.checked) return toast('Coche la case « Je certifie… » pour publier');
+  let rets=[]; if($('#oretc')?.classList.contains('on')){ const [rh,rm]=($('#oret').value||'').split(':').map(Number); if(isNaN(rh)) return toast('Indique l\'heure du retour');
+    rets=dates.map(d=>{ const r=new Date(d); r.setHours(rh,rm||0,0,0); return r; });
+    if(rets.some((r,i)=>r<=dates[i])) return toast('L\'heure du retour doit être après l\'heure de l\'aller'); }
   $('#pub').disabled=true;
   const base={from_place:a,to_place:b,seats:s,km:km(a,b),price,
     note:$('#on').value.trim(),women_only:$('#ow').classList.contains('on'),instant:$('#oi').classList.contains('on'),luggage:$('#olg').value,
     pets:$('#opt').classList.contains('on'),max2_back:$('#om2').classList.contains('on'),meeting_point:$('#omp').value.trim(),meet_lat:meetPick?.lat??null,meet_lng:meetPick?.lng??null};
-  const {error}=await sb.from('trips').insert(dates.map(d=>({...base,depart_at:d.toISOString()})));
-  $('#pub').disabled=false; if(error)return toast(errMsg(error)); meetPick=null; toast(dates.length>1?`${dates.length} trajets publiés 🔁`:'Trajet publié 🚗'); go('mine');
+  if(!me?.verified) base.driver_cert_v=CERT_V;
+  const back={...base,from_place:b,to_place:a,meeting_point:'',meet_lat:null,meet_lng:null,note:''};
+  const rows=[...dates.map(d=>({...base,depart_at:d.toISOString()})), ...rets.map(r=>({...back,depart_at:r.toISOString()}))];
+  const {error}=await sb.from('trips').insert(rows);
+  $('#pub').disabled=false; if(error)return toast(errMsg(error)); meetPick=null; toast(rows.length>1?`${rows.length} trajets publiés ${rets.length?'↩️':'🔁'}`:'Trajet publié 🚗'); go('mine');
   if(!me?.verified){ const {data:vr}=await sb.from('verif_requests').select('status').eq('user_id',user.id).maybeSingle();
     if(!vr||vr.status==='refused') setTimeout(()=>sheet(`<h2>Bravo, ton trajet est en ligne ! 🚗</h2>
       <div class="hint">Dernière étape pour trouver des passagers plus facilement : le <b>badge ✓ Vérifié</b>.</div>
@@ -675,7 +700,7 @@ async function reviewVerif(uid,ok,btn){
   toast(ok?'Membre vérifié ✅ Documents supprimés':'Demande refusée, documents supprimés'); loadVerifQueue(); $('#aq')?.oninput?.();
 }
 async function openAdmin(){
-  sheet('<h2>🛠️ Administration</h2><div class="chips" style="margin-bottom:8px">'+[['alist','👥 Membres'],['adem','🔔 Alertes & demandes'],['rqueue','🚩 Signalements'],['vqueue','✓ Badges'],['amail','📧 Mails'],['aann','📢 Annonces'],['aarch','🗄️ Supprimés']].map(([id,l])=>`<button class="chip" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})">${l}</button>`).join('')+'</div><h3>🔔 Alertes et demandes</h3><div id="adem"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📢 Annonces dans l’appli</h3><div id="aann"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">👥 Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div class="chips" id="afil" style="margin-top:8px"></div><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
+  sheet('<h2>🛠️ Administration</h2><div class="chips" style="margin-bottom:8px">'+[['alist','👥 Membres'],['atrips','🚗 Trajets'],['adem','🔔 Alertes & demandes'],['rqueue','🚩 Signalements'],['vqueue','✓ Badges'],['amail','📧 Mails'],['aann','📢 Annonces'],['aarch','🗄️ Supprimés']].map(([id,l])=>`<button class="chip" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})">${l}</button>`).join('')+'</div><h3>🚗 Trajets à venir</h3><div id="atrips"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🔔 Alertes et demandes</h3><div id="adem"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📢 Annonces dans l’appli</h3><div id="aann"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">👥 Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div class="chips" id="afil" style="margin-top:8px"></div><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
   const {data,error}=await sb.rpc('admin_list_users'); if(error){ $('#alist').innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   await loadMailStats();
   const FIL=[['all','Tous',u=>true],['ver','✓ Vérifiés',u=>u.verified],['nover','⏳ Non vérifiés',u=>!u.verified],['pend','📄 Badge demandé',u=>u.verif_pending],
@@ -690,9 +715,28 @@ async function openAdmin(){
       <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><button class="btn small ${u.verified?'sec':''}" onclick="setVerified('${u.uid}',${!u.verified},this)">${u.verified?'Retirer':'✓ Vérifier'}</button>
       <span style="white-space:nowrap"><button class="btn small sec" title="Historique" onclick="openHistory('${u.uid}','${esc(u.first_name||'')}')">📜</button> ${u.uid===user.id?'':`<button class="btn small sec" title="${u.blocked?'Débloquer':'Bloquer'}" onclick="askBlock('${u.uid}','${esc(u.first_name||'')}',${!u.blocked})">${u.blocked?'🔓':'🚫'}</button> <button class="btn small sec" title="Supprimer" onclick="askDeleteUser('${u.uid}','${esc(u.first_name||'')}')">🗑️</button>`}</span></span></div>`).join(''); };
   openAdmin._rows=()=>{ const ff=(FIL.find(x=>x[0]===fil)||FIL[0])[2]; return (data||[]).filter(ff); };
-  openAdmin._draw=draw; $('#aq').oninput=draw; drawFil(); draw(); openAdmin._data=data; loadVerifQueue(); loadReports(); drawMail(); loadArchives(); loadAdminAnnc(); loadDemand2();
+  openAdmin._draw=draw; $('#aq').oninput=draw; drawFil(); draw(); openAdmin._data=data; loadVerifQueue(); loadReports(); drawMail(); loadArchives(); loadAdminAnnc(); loadDemand2(); loadAdminTrips();
 }
 
+let ATRIPS=[], ATPER='7';
+async function loadAdminTrips(){ const el=$('#atrips'); if(!el) return; const {data,error}=await sb.rpc('admin_trips');
+  if(error){ el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; } ATRIPS=data||[]; drawAdminTrips(); }
+function drawAdminTrips(){ const el=$('#atrips'); if(!el) return; const now=new Date(), d0=new Date(); d0.setHours(0,0,0,0);
+  const lim={today:new Date(+d0+864e5), '7':new Date(+d0+8*864e5), all:new Date(+d0+61*864e5)}[ATPER];
+  const rows=ATRIPS.filter(t=>new Date(t.depart_at||t.depart)<lim);
+  const dk=x=>new Date(x).toDateString(), HM=x=>hm(new Date(x));
+  const retOf=t=>{ const r=ATRIPS.filter(r=>r.duid===t.duid&&r.de===t.vers&&r.vers===t.de&&dk(r.depart)===dk(t.depart)&&new Date(r.depart)>new Date(t.depart)).sort((a,b)=>new Date(a.depart)-new Date(b.depart))[0]; return r?HM(r.depart):''; };
+  const groups={}; rows.forEach(t=>{ (groups[t.de+' → '+t.vers]=groups[t.de+' → '+t.vers]||[]).push(t); });
+  const DJ=['dim','lun','mar','mer','jeu','ven','sam'];
+  const lineHtml=list=>{ const t=list[0], n=list.length, ret=list.map(retOf).find(Boolean)||'';
+    const days=[...new Set(list.map(x=>new Date(x.depart).getDay()))].sort((a,b)=>((a+6)%7)-((b+6)%7)).map(d=>DJ[d]);
+    const when = n>1 ? `🔁 ${days.join(', ')} · ${HM(t.depart)} · ${n} dates (prochain ${new Date(t.depart).toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})})`
+                     : new Date(t.depart).toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})+' · '+HM(t.depart);
+    const res = n>1 ? `${list.reduce((s,x)=>s+(+x.reservees||0),0)} place(s) réservée(s) au total` : `${t.reservees}/${t.places} réservée${t.reservees>1?'s':''}`;
+    return `<div class="meta" style="display:block"><button class="link" style="font-size:inherit;font-weight:700" onclick="openHistory('${t.duid}','${esc(t.prenom||'')}')">${esc(t.prenom||'?')}</button> ${t.verifie?'<span class="tag t-ok">✓</span>':`<span class="tag">⏳ non vérifié</span>${t.certifie?' <span class="tag">✍️ certifié</span>':''}`}${isMicro(t.voiture)?' <span class="tag">🚙 voiturette</span>':''}<br><small>${when}${ret?` · ↩️ retour ${ret}`:''} · ${res} · ${String(t.prix).replace('.',',')} €</small></div>`; };
+  const gh=Object.entries(groups).sort((a,b)=>b[1].length-a[1].length).map(([k,list])=>{ const by={}; list.forEach(t=>{ const kk=t.duid+'|'+HM(t.depart); (by[kk]=by[kk]||[]).push(t); });
+    return `<details style="margin-top:4px"><summary style="cursor:pointer;font-weight:700;padding:8px 0">📍 ${esc(k)} <span class="tag">${list.length}</span></summary>${Object.values(by).map(lineHtml).join('')}</details>`; }).join('');
+  el.innerHTML=`<div class="chips">${[['today','Aujourd\'hui'],['7','7 jours'],['all','Tout']].map(([k,l])=>`<button class="chip ${k===ATPER?'on':''}" onclick="ATPER='${k}';drawAdminTrips()">${l}</button>`).join('')}</div><div class="hint">${rows.length} trajet${rows.length>1?'s':''} · ${Object.keys(groups).length} itinéraire${Object.keys(groups).length>1?'s':''}</div>`+(gh||'<div class="hint">Aucun trajet sur cette période.</div>'); }
 const SLOT={matin:'matin',midi:'midi',soir:'soir',tous:'toute la journée'};
 const SLOT_FB={matin:'le matin',midi:'le midi',soir:'le soir',tous:''};
 function fbPost(de,vers,creneau,n,quand){ de=de||'Les Andelys'; vers=vers||'n\'importe où';

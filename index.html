@@ -58,6 +58,7 @@ nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 .mode button.on{background:#fff;color:var(--g)}.mode .dot{position:absolute;top:2px;right:10px}
 .msg small{display:block;font-size:11px;opacity:.7}h3{margin:4px 0 8px}
 .feedb{position:fixed;left:50%;transform:translate(-50%,20px);bottom:calc(84px + env(safe-area-inset-bottom));width:calc(100% - 24px);max-width:456px;background:#0f172a;color:#fff;border-radius:16px;padding:12px 40px 12px 14px;font-size:14px;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:15;opacity:0;transition:opacity .3s,transform .3s;cursor:pointer}.feedb.on{opacity:1;transform:translate(-50%,0)}.feedb b{display:block}.feedb small{opacity:.85}.feedb button{position:absolute;top:6px;right:6px;background:none;border:0;color:#fff;font-size:17px;padding:6px;cursor:pointer}
+.pwrap{position:relative}.psug{display:none;position:absolute;left:0;right:0;top:100%;z-index:40;background:#fff;border:1px solid var(--b);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.14);max-height:280px;overflow:auto;margin-top:4px;min-width:220px}.psug button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f1f5f9;background:none;padding:12px;font:inherit;font-size:15px;color:var(--t);cursor:pointer}.psug button:active{background:#f0fdfa}.psm{padding:10px 12px;font-size:13px;color:var(--m)}
 .annc{position:relative;background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:12px 40px 12px 14px;margin:10px 12px 0;font-size:14px;line-height:1.45;color:#78350f}.annc b{display:block;margin-bottom:2px}.annc button{position:absolute;top:6px;right:6px;background:none;border:0;font-size:18px;color:#92400e;padding:6px;cursor:pointer}
 .legal h2{margin:0 0 8px}.legal h4{margin:16px 0 4px;color:var(--g)}.legal p,.legal li{font-size:14px;line-height:1.5}.legal ul{padding-left:18px;margin:4px 0}
 </style>
@@ -101,26 +102,45 @@ const NAMES = Object.keys(PLACES).sort((a,b)=>a.localeCompare(b,'fr'));
 const DEPTS = ['27','76','78','95','60','28','14','61'];
 const placeName = c => c.codeDepartement==='27' ? c.nom : `${c.nom} (${c.codeDepartement})`;
 function rememberPlace(n, lat, lon){ PLACES[n]=[lat,lon]; try{ const m=JSON.parse(localStorage.getItem('covoit_places')||'{}'); m[n]=[lat,lon]; localStorage.setItem('covoit_places',JSON.stringify(m)); }catch(e){} }
+const norm = x => String(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[-'’]/g,' ').replace(/\s+/g,' ').trim();
 async function geoSearch(q){
   q=q.replace(/\s*\(\d+\)\s*$/,'').trim(); if(q.length<2) return [];
-  try{ const r=await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(q)}&fields=nom,codeDepartement,centre&boost=population&limit=25`);
-    const list=(await r.json()).filter(c=>DEPTS.includes(c.codeDepartement)&&c.centre).slice(0,8);
+  const ask=async qq=>{ const r=await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(qq)}&fields=nom,codeDepartement,centre&boost=population&limit=60`);
+    return (await r.json()).filter(c=>DEPTS.includes(c.codeDepartement)&&c.centre); };
+  try{ let list=await ask(q); if(!list.length && /\s/.test(q)) list=await ask(q.replace(/\s+/g,'-'));
+    const nq=norm(q); list.sort((a,b)=>(norm(b.nom).startsWith(nq)?1:0)-(norm(a.nom).startsWith(nq)?1:0)); list=list.slice(0,10);
     list.forEach(c=>rememberPlace(placeName(c), c.centre.coordinates[1], c.centre.coordinates[0])); return list.map(placeName);
-  }catch(e){ return []; } }
+  }catch(e){ return null; } }
 // Trouve les coordonnées d'un nom tapé (liste connue, sinon recherche officielle)
 async function resolvePlace(v){
   v=(v||'').trim(); if(!v) return '';
   if(PLACES[v]) return v;
-  const k=Object.keys(PLACES).find(n=>n.toLowerCase()===v.toLowerCase()); if(k) return k;
-  const found=await geoSearch(v); const exact=found.find(n=>n.toLowerCase().replace(/\s*\(\d+\)$/,'')===v.toLowerCase().replace(/\s*\(\d+\)$/,''));
+  const k=Object.keys(PLACES).find(n=>norm(n)===norm(v)); if(k) return k;
+  const found=(await geoSearch(v))||[]; const exact=found.find(n=>norm(n.replace(/\s*\(\d+\)$/,''))===norm(v.replace(/\s*\(\d+\)$/,'')));
   return exact || found[0] || null; }
 // Champ de saisie d'une commune avec suggestions
-const placeInput = (id, val, ph) => `<input id="${id}" list="dl_${id}" value="${esc(val||'')}" placeholder="${ph||'Tape une commune'}" autocomplete="off" autocapitalize="words"><datalist id="dl_${id}">${NAMES.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`;
-function wirePlace(id, onPick){ const el=$('#'+id); if(!el) return; let tmr;
-  el.addEventListener('input',()=>{ clearTimeout(tmr); tmr=setTimeout(async()=>{ const res=await geoSearch(el.value); if(!res.length) return;
-    const dl=$('#dl_'+id); const have=new Set([...dl.options].map(o=>o.value)); res.forEach(n=>{ if(!have.has(n)){ const o=document.createElement('option'); o.value=n; dl.prepend(o);} }); },300); });
-  el.addEventListener('change',async()=>{ if(!el.value.trim()){ onPick&&onPick(''); return; } const r=await resolvePlace(el.value);
-    if(r){ el.value=r; onPick&&onPick(r); } else toast('Commune introuvable : choisis-la dans les suggestions'); }); }
+const placeInput = (id, val, ph) => `<div class="pwrap"><input id="${id}" value="${esc(val||'')}" placeholder="${ph||'Tape une commune'}" autocomplete="off" autocapitalize="words" enterkeyhint="done"><div class="psug" id="sg_${id}"></div></div>`;
+const POPULAR = ['Les Andelys','Vernon','Gaillon','Évreux','Louviers','Rouen','Gisors','Val-de-Reuil'];
+function wirePlace(id, onPick){ const el=$('#'+id), box=$('#sg_'+id); if(!el||!box) return; let tmr, seq=0, last=el.value;
+  const hide=()=>{ box.style.display='none'; };
+  const show=(list,msg)=>{ box.innerHTML=list.map(n=>`<button type="button" data-n="${esc(n)}">📍 ${esc(n)}</button>`).join('')+(msg?`<div class="psm">${msg}</div>`:'');
+    box.querySelectorAll('button').forEach(b=>{ b.addEventListener('mousedown',e=>e.preventDefault()); b.onclick=()=>pick(b.dataset.n); });
+    box.style.display=(list.length||msg)?'block':'none'; };
+  const pick=n=>{ el.value=n; last=n; hide(); onPick&&onPick(n); };
+  const local=q=>{ const nq=norm(q); if(!nq) return POPULAR.filter(n=>PLACES[n]);
+    const a=NAMES.filter(n=>norm(n).startsWith(nq)), b=NAMES.filter(n=>!norm(n).startsWith(nq)&&norm(n).includes(nq)); return [...a,...b].slice(0,6); };
+  el.addEventListener('focus',()=>{ if(!el.value.trim()) show(local('')); });
+  el.addEventListener('input',()=>{ const q=el.value, mine=++seq; const loc=local(q);
+    show(loc, q.trim().length>=2?'🔎 Recherche dans toutes les communes…':''); clearTimeout(tmr);
+    if(q.trim().length<2) return;
+    tmr=setTimeout(async()=>{ const res=await geoSearch(q); if(mine!==seq) return;
+      if(res===null) return show(loc,'⚠️ Recherche impossible, vérifie ta connexion.');
+      const all=[...loc,...res.filter(n=>!loc.includes(n))].slice(0,10);
+      show(all, all.length?'':'Aucune commune trouvée. Vérifie l\'orthographe (ex. : Tourville-la-Rivière).'); },300); });
+  el.addEventListener('blur',()=>setTimeout(hide,150));
+  el.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const f=box.querySelector('button'); if(f&&box.style.display==='block'){ e.preventDefault(); pick(f.dataset.n); } } });
+  el.addEventListener('change',async()=>{ if(el.value===last) return; if(!el.value.trim()){ last=''; onPick&&onPick(''); return; } const r=await resolvePlace(el.value);
+    if(r){ el.value=r; last=r; onPick&&onPick(r); } else toast('Commune introuvable : choisis-la dans la liste'); }); }
 const FUEL = 2.34, CONSO = 6, BAREME = 0.636, MAX_DAY = 4;
 const COLORS = ['#0f766e','#7c3aed','#db2777','#ea580c','#2563eb','#16a34a'];
 

@@ -496,7 +496,7 @@ cgu: `<h2>Conditions générales d'utilisation</h2>
 <h4>8. Messagerie et comportement</h4>
 <p>La messagerie sert uniquement à organiser le trajet. Sont interdits : propos injurieux, discriminatoires ou menaçants, démarchage, fausses annonces, et toute utilisation commerciale du service. Covoit' Andelys peut supprimer un contenu ou suspendre un compte qui ne respecte pas ces règles.</p>
 <h4>9. Vérification d'identité</h4>
-<p>Le badge « ✓ Vérifié » indique que Covoit' Andelys a contrôlé la pièce d'identité du conducteur, son permis et son attestation d'assurance. Le badge « 🪪 Identité vérifiée » indique que l'identité du conducteur a été vérifiée par Stripe lors de l'activation du paiement par carte. Ces badges ne garantissent pas le comportement d'un membre ; chacun reste vigilant.</p>
+<p>Le badge « ✓ Vérifié » indique que Covoit' Andelys a contrôlé la pièce d'identité du conducteur, son permis et son attestation d'assurance. Il est valable jusqu'à la date de fin de l'assurance contrôlée, puis doit être renouvelé avec la nouvelle attestation. Le badge « 🪪 Identité vérifiée » indique que l'identité du conducteur a été vérifiée par Stripe lors de l'activation du paiement par carte. Ces badges ne garantissent pas le comportement d'un membre ; chacun reste vigilant.</p>
 <h4>10. Responsabilité</h4>
 <p>Covoit' Andelys met tout en œuvre pour assurer le bon fonctionnement du service mais ne peut garantir une disponibilité permanente. Il n'est pas partie au contrat de covoiturage conclu entre conducteur et passagers et n'est pas responsable des retards, annulations, accidents ou litiges survenus lors d'un trajet, sauf faute de sa part.</p>
 <h4>11. Données personnelles</h4>
@@ -650,14 +650,20 @@ async function uploadAvatar(file){ try{ toast('Envoi de la photo…'); const blo
   const {error}=await sb.from('profiles').update({avatar_url:url}).eq('id',user.id); if(error) throw error; me.avatar_url=url; toast('Photo enregistrée ✅'); render(); }
   catch(e){ toast(e.message||'Erreur photo'); } }
 async function removeAvatar(){ await sb.storage.from('avatars').remove([`${user.id}/avatar.jpg`]); await sb.from('profiles').update({avatar_url:null}).eq('id',user.id); me.avatar_url=null; toast('Photo retirée'); render(); }
+const fdate = d => d ? new Date(d+(String(d).length===10?'T12:00':'')).toLocaleDateString('fr-FR') : '';
+const daysTo = d => d ? Math.ceil((new Date(d+'T23:59')-Date.now())/864e5) : 1e9;
 const VDOCS = [['id','🪪 Pièce d\'identité (recto)'],['permis','🚗 Permis de conduire'],['assurance','📄 Attestation d\'assurance du véhicule']];
 async function loadVerifCard(){
   const box=$('#vcard'); if(!box) return;
   const {data:req}=await sb.from('verif_requests').select('*').eq('user_id',user.id).maybeSingle();
   const stripeLine = me?.stripe_ready ? '<div class="note">🪪 Ton identité a déjà été vérifiée par Stripe (paiement par carte) : le badge « Identité vérifiée » s\'affiche sur tes trajets.</div>' : '';
   let body;
-  if(me?.verified) body='<div class="note">✅ Compte vérifié : le badge <b>✓ Vérifié</b> apparaît sur tes trajets.</div>';
-  else if(req?.status==='pending') body=`${stripeLine}<div class="note warn">⏳ Demande envoyée le ${new Date(req.created_at).toLocaleDateString('fr-FR')}. Elle est en cours d'examen : la réponse s'affichera ici.</div>`;
+  const renew = !!me?.verified_until && (!me?.verified || daysTo(me.verified_until)<=45);
+  if(req?.status==='pending') body=`${me?.verified?`<div class="note">✅ Badge valable jusqu'au <b>${fdate(me.verified_until)}</b>.</div>`:''}<div class="note warn">⏳ Demande envoyée le ${new Date(req.created_at).toLocaleDateString('fr-FR')}. Elle est en cours d'examen : la réponse s'affichera ici.</div>`;
+  else if(me?.verified && !renew) body=`<div class="note">✅ Compte vérifié : le badge <b>✓ Vérifié</b> apparaît sur tes trajets.${me.verified_until?`<br>Valable jusqu'au <b>${fdate(me.verified_until)}</b> (fin de ton assurance). On te préviendra avant.`:''}</div>`;
+  else if(renew) body=`${req?.status==='refused'?`<div class="note warn">❌ Attestation refusée${req.reason?` : <b>${esc(req.reason)}</b>`:''}. Tu peux en renvoyer une.</div>`:''}<div class="note ${me.verified?'':'warn'}">${me.verified?`⌛ Ton badge expire le <b>${fdate(me.verified_until)}</b>.`:`⌛ Ton badge a expiré le <b>${fdate(me.verified_until)}</b>.`} Pour le renouveler, envoie simplement ta <b>nouvelle attestation d'assurance</b>.</div>
+    <label style="color:var(--t)">📄 Nouvelle attestation d'assurance</label><input type="file" id="vd-renew" accept="image/*">
+    <div class="hint">🔒 Supprimée dès l'examen terminé.</div><button class="btn" id="vsend" onclick="submitVerif(true)">Envoyer mon attestation</button>`;
   else body=`${stripeLine}${req?.status==='refused'?`<div class="note warn">❌ Demande refusée${req.reason?` : <b>${esc(req.reason)}</b>`:''}. Tu peux renvoyer tes documents.</div>`:''}
     <div class="hint">Le badge <b>✓ Vérifié</b> rassure les passagers. Envoie une photo nette de ces 3 documents :</div>
     ${VDOCS.map(([k,l])=>`<label style="color:var(--t)">${l}</label><input type="file" id="vd-${k}" accept="image/*">`).join('')}
@@ -668,15 +674,16 @@ async function loadVerifCard(){
 function resizeMax(file, max=1600){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;const r=Math.min(1,max/Math.max(w,h));w=Math.round(w*r);h=Math.round(h*r);
   const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);c.toBlob(b=>b?res(b):rej(new Error('Image illisible')),'image/jpeg',0.85);URL.revokeObjectURL(img.src);};
   img.onerror=()=>rej(new Error('Image illisible'));img.src=URL.createObjectURL(file);});}
-async function submitVerif(){
-  const files=VDOCS.map(([k])=>$('#vd-'+k).files[0]); if(files.some(f=>!f)) return toast('Ajoute les 3 documents');
+async function submitVerif(renew){
+  const docs=renew?[['renew']]:VDOCS;
+  const files=docs.map(([k])=>$('#vd-'+k).files[0]); if(files.some(f=>!f)) return toast(renew?'Ajoute ton attestation d\'assurance':'Ajoute les 3 documents');
   const btn=$('#vsend'); btn.disabled=true; btn.textContent='Envoi en cours…';
   try{ const ts=Date.now(), paths=[];
-    for(let i=0;i<3;i++){ const blob=await resizeMax(files[i]); const path=`${user.id}/${VDOCS[i][0]}-${ts}.jpg`;
+    for(let i=0;i<files.length;i++){ const blob=await resizeMax(files[i]); const path=`${user.id}/${renew?'assurance':VDOCS[i][0]}-${ts}.jpg`;
       const up=await sb.storage.from('verif-docs').upload(path,blob,{contentType:'image/jpeg'}); if(up.error) throw up.error; paths.push(path); }
     const {error}=await sb.rpc('submit_verification',{paths}); if(error) throw error;
     toast('Demande envoyée ✅ La réponse s\'affichera dans ton profil'); loadVerifCard();
-  }catch(e){ btn.disabled=false; btn.textContent='Envoyer ma demande'; toast(errMsg(e)); }
+  }catch(e){ btn.disabled=false; btn.textContent=renew?'Envoyer mon attestation':'Envoyer ma demande'; toast(errMsg(e)); }
 }
 async function loadVerifQueue(){
   const box=$('#vqueue'); if(!box) return;
@@ -685,25 +692,27 @@ async function loadVerifQueue(){
   const urls={}; const all=data.flatMap(r=>r.files||[]);
   if(all.length){ const {data:su}=await sb.storage.from('verif-docs').createSignedUrls(all,600); (su||[]).forEach(x=>urls[x.path]=x.signedUrl); }
   box.innerHTML=`<div class="hint"><b>${data.length} demande${data.length>1?'s':''} en attente</b></div>`+data.map(r=>`<div class="card" style="box-shadow:none;border:1px solid var(--b)">
-    <b>${esc(r.first_name||'—')}</b>${r.stripe_ready?' <span class="tag" style="background:#e0e7ff;color:#3730a3">🪪 Stripe</span>':''}<br><small style="color:var(--m)">${esc(r.email||'')} · ${new Date(r.requested).toLocaleDateString('fr-FR')}</small>
-    <div style="display:flex;gap:6px;margin-top:8px">${(r.files||[]).map((f,i)=>`<a href="${esc(urls[f]||'#')}" target="_blank" rel="noopener" style="flex:1;text-align:center;font-size:11px;color:var(--m)"><img src="${esc(urls[f]||'')}" style="width:100%;height:70px;object-fit:cover;border-radius:8px;background:#eee"><br>${['Identité','Permis','Assurance'][i]||''}</a>`).join('')}</div>
-    <input id="vr-${r.uid}" placeholder="Motif si refus (ex : permis illisible)" style="margin-top:8px">
+    <b>${esc(r.first_name||'—')}</b>${r.kind==='renew'?` <span class="tag" style="background:#fef3c7;color:#92400e">🔄 Renouvellement${r.verified_until?' · badge au '+fdate(r.verified_until):''}</span>`:''}${r.stripe_ready?' <span class="tag" style="background:#e0e7ff;color:#3730a3">🪪 Stripe</span>':''}<br><small style="color:var(--m)">${esc(r.email||'')} · ${new Date(r.requested).toLocaleDateString('fr-FR')}</small>
+    <div style="display:flex;gap:6px;margin-top:8px">${(r.files||[]).map((f,i)=>`<a href="${esc(urls[f]||'#')}" target="_blank" rel="noopener" style="flex:1;text-align:center;font-size:11px;color:var(--m)"><img src="${esc(urls[f]||'')}" style="width:100%;height:70px;object-fit:cover;border-radius:8px;background:#eee"><br>${r.kind==='renew'?'Assurance':(['Identité','Permis','Assurance'][i]||'')}</a>`).join('')}</div>
+    <label style="color:var(--t)">📅 Assurance valable jusqu'au (lue sur l'attestation)</label><input type="date" id="vu-${r.uid}" min="${today()}">
+    <input id="vr-${r.uid}" placeholder="Motif si refus (ex : attestation illisible)" style="margin-top:8px">
     <div class="row" style="margin-top:8px"><button class="btn small" onclick="reviewVerif('${r.uid}',true,this)">✓ Valider</button><button class="btn small sec" onclick="reviewVerif('${r.uid}',false,this)">✗ Refuser</button></div></div>`).join('')
     +'<div class="hint">Touche une photo pour l\'agrandir. Les documents sont supprimés dès ta réponse.</div>';
 }
 async function reviewVerif(uid,ok,btn){
   const why=($('#vr-'+uid)?.value||'').trim(); if(!ok && !why) return toast('Indique le motif du refus');
-  btn.disabled=true; const {data:files,error}=await sb.rpc('admin_review_verif',{target:uid,accept:ok,why});
+  const until=$('#vu-'+uid)?.value||null; if(ok && !until) return toast('Indique la date de fin de l\'assurance');
+  btn.disabled=true; const {data:files,error}=await sb.rpc('admin_review_verif',{target:uid,accept:ok,why,until});
   if(error){ btn.disabled=false; return toast(errMsg(error)); }
   if(files?.length) await sb.storage.from('verif-docs').remove(files);
-  const u=(openAdmin._data||[]).find(x=>x.uid===uid); if(u) u.verified=ok; if(uid===user.id) me.verified=ok;
+  const u=(openAdmin._data||[]).find(x=>x.uid===uid); if(ok){ if(u){u.verified=true;u.verified_until=until;} if(uid===user.id){me.verified=true;me.verified_until=until;} }
   toast(ok?'Membre vérifié ✅ Documents supprimés':'Demande refusée, documents supprimés'); loadVerifQueue(); $('#aq')?.oninput?.();
 }
 async function openAdmin(){
   sheet('<h2>🛠️ Administration</h2><div class="chips" style="margin-bottom:8px">'+[['alist','👥 Membres'],['atrips','🚗 Trajets'],['adem','🔔 Alertes & demandes'],['rqueue','🚩 Signalements'],['vqueue','✓ Badges'],['amail','📧 Mails'],['aann','📢 Annonces'],['aarch','🗄️ Supprimés']].map(([id,l])=>`<button class="chip" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})">${l}</button>`).join('')+'</div><h3>🚗 Trajets à venir</h3><div id="atrips"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🔔 Alertes et demandes</h3><div id="adem"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📢 Annonces dans l’appli</h3><div id="aann"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">👥 Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div class="chips" id="afil" style="margin-top:8px"></div><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
   const {data,error}=await sb.rpc('admin_list_users'); if(error){ $('#alist').innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   await loadMailStats();
-  const FIL=[['all','Tous',u=>true],['ver','✓ Vérifiés',u=>u.verified],['nover','⏳ Non vérifiés',u=>!u.verified],['pend','📄 Badge demandé',u=>u.verif_pending],
+  const FIL=[['all','Tous',u=>true],['ver','✓ Vérifiés',u=>u.verified],['nover','⏳ Non vérifiés',u=>!u.verified],['pend','📄 Badge demandé',u=>u.verif_pending],['exp','⌛ À renouveler',u=>!!u.verified_until&&(!u.verified||daysTo(u.verified_until)<=30)],
     ['car','🚗 Véhicule',u=>!!(u.car_model||'').trim()],['pub','📍 Ont publié',u=>u.nb_trips>0],['up','🗓️ Trajet à venir',u=>u.nb_upcoming>0],
     ['look','🔎 Cherchent',u=>u.nb_alerts>0||u.nb_bookings>0],['card','💳 Carte activée',u=>u.stripe_ready],['new','🆕 Nouveaux (7 j)',u=>Date.now()-new Date(u.joined)<7*864e5],['blk','🚫 Bloqués',u=>u.blocked]];
   let fil=openAdmin._fil||'all';
@@ -711,7 +720,7 @@ async function openAdmin(){
     $('#afil').querySelectorAll('button').forEach(b=>b.onclick=()=>{ fil=openAdmin._fil=b.dataset.k; drawFil(); draw(); }); };
   const draw=()=>{ const q=($('#aq').value||'').toLowerCase(); const ff=(FIL.find(x=>x[0]===fil)||FIL[0])[2];
     const rows=(data||[]).filter(ff).filter(u=>!q||(u.first_name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q));
-    $('#alist').innerHTML=`<div class="hint">${rows.length} membre${rows.length>1?'s':''}${fil!=='all'?` · <button class="link" onclick="selFiltered()">☑️ Sélectionner ces membres pour un e-mail</button>`:''}</div>`+rows.map(u=>`<div class="meta"><span style="display:flex;align-items:center">${u.email?`<input type="checkbox" style="width:22px;height:22px;flex:none;margin:0 8px 0 0" ${mailSel.has(u.email)?'checked':''} onchange="toggleSel('${esc(u.email)}',this.checked)">`:''}${av(u.first_name,u.avatar_url)}<span><b>${esc(u.first_name||'—')}</b>${u.verified?'<span class="tag t-ok">✓</span>':''}${u.blocked?'<span class="tag" style="background:#fee2e2;color:#b91c1c">🚫 Bloqué</span>':''}<br><small style="color:var(--m)"><button class="link" style="font-size:inherit" onclick="mailMember('${u.uid}')">✉️ ${esc(u.email||'')}</button>${u.car_model?' · 🚗 '+esc(u.car_model):''}${u.stripe_ready?' · 💳':''}<br>🗓️ inscrit le ${new Date(u.joined).toLocaleDateString('fr-FR')}${u.nb_trips?` · 📍 ${u.nb_trips} trajet${u.nb_trips>1?'s':''}${u.nb_upcoming?` (${u.nb_upcoming} à venir)`:''}`:''}${u.nb_bookings?` · 🎫 ${u.nb_bookings} réserv.`:''}${u.nb_alerts?` · 🔔 ${u.nb_alerts} alerte${u.nb_alerts>1?'s':''}`:''}${u.verif_pending?' · 📄 badge demandé':''}${mailStats[u.uid]?`<br>📧 ${mailStats[u.uid].n} e-mail${mailStats[u.uid].n>1?'s':''} · dernier le ${new Date(mailStats[u.uid].last_at).toLocaleDateString('fr-FR')} (${TPL_NAME[mailStats[u.uid].last_tpl]||mailStats[u.uid].last_tpl})`:''}</small></span></span>
+    $('#alist').innerHTML=`<div class="hint">${rows.length} membre${rows.length>1?'s':''}${fil!=='all'?` · <button class="link" onclick="selFiltered()">☑️ Sélectionner ces membres pour un e-mail</button>`:''}</div>`+rows.map(u=>`<div class="meta"><span style="display:flex;align-items:center">${u.email?`<input type="checkbox" style="width:22px;height:22px;flex:none;margin:0 8px 0 0" ${mailSel.has(u.email)?'checked':''} onchange="toggleSel('${esc(u.email)}',this.checked)">`:''}${av(u.first_name,u.avatar_url)}<span><b>${esc(u.first_name||'—')}</b>${u.verified?'<span class="tag t-ok">✓</span>':''}${u.verified_until?`<span class="tag" style="${!u.verified||daysTo(u.verified_until)<=30?'background:#fef3c7;color:#92400e':''}">${u.verified?'⌛ '+fdate(u.verified_until):'expiré le '+fdate(u.verified_until)}</span>`:''}${u.blocked?'<span class="tag" style="background:#fee2e2;color:#b91c1c">🚫 Bloqué</span>':''}<br><small style="color:var(--m)"><button class="link" style="font-size:inherit" onclick="mailMember('${u.uid}')">✉️ ${esc(u.email||'')}</button>${u.car_model?' · 🚗 '+esc(u.car_model):''}${u.stripe_ready?' · 💳':''}<br>🗓️ inscrit le ${new Date(u.joined).toLocaleDateString('fr-FR')}${u.nb_trips?` · 📍 ${u.nb_trips} trajet${u.nb_trips>1?'s':''}${u.nb_upcoming?` (${u.nb_upcoming} à venir)`:''}`:''}${u.nb_bookings?` · 🎫 ${u.nb_bookings} réserv.`:''}${u.nb_alerts?` · 🔔 ${u.nb_alerts} alerte${u.nb_alerts>1?'s':''}`:''}${u.verif_pending?' · 📄 badge demandé':''}${mailStats[u.uid]?`<br>📧 ${mailStats[u.uid].n} e-mail${mailStats[u.uid].n>1?'s':''} · dernier le ${new Date(mailStats[u.uid].last_at).toLocaleDateString('fr-FR')} (${TPL_NAME[mailStats[u.uid].last_tpl]||mailStats[u.uid].last_tpl})`:''}</small></span></span>
       <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><button class="btn small ${u.verified?'sec':''}" onclick="setVerified('${u.uid}',${!u.verified},this)">${u.verified?'Retirer':'✓ Vérifier'}</button>
       <span style="white-space:nowrap"><button class="btn small sec" title="Historique" onclick="openHistory('${u.uid}','${esc(u.first_name||'')}')">📜</button> ${u.uid===user.id?'':`<button class="btn small sec" title="${u.blocked?'Débloquer':'Bloquer'}" onclick="askBlock('${u.uid}','${esc(u.first_name||'')}',${!u.blocked})">${u.blocked?'🔓':'🚫'}</button> <button class="btn small sec" title="Supprimer" onclick="askDeleteUser('${u.uid}','${esc(u.first_name||'')}')">🗑️</button>`}</span></span></div>`).join(''); };
   openAdmin._rows=()=>{ const ff=(FIL.find(x=>x[0]===fil)||FIL[0])[2]; return (data||[]).filter(ff); };
@@ -807,8 +816,10 @@ function already_uncheck(){ const tpl=$('#mt').value; if($('#mg')?.value!=='cust
 async function copyMails(){ const t=mailGroup().map(u=>u.email).join(', ');
   try{ await navigator.clipboard.writeText(t); toast('Adresses copiées 📋 Colle-les dans le champ Cci'); }catch(e){ prompt('Copie ces adresses :', t); } }
 
-async function setVerified(id,v,btn){ btn.disabled=true; const {error}=await sb.rpc('admin_set_verified',{target:id,v}); if(error){btn.disabled=false;return toast(errMsg(error));}
-  const u=(openAdmin._data||[]).find(x=>x.uid===id); if(u) u.verified=v; if(id===user.id) me.verified=v; toast(v?'Badge ✓ Vérifié attribué':'Badge retiré'); $('#aq').oninput(); }
+async function setVerified(id,v,btn,until){
+  if(v && !until){ btn.outerHTML=`<span style="display:flex;gap:4px;align-items:center"><input type="date" id="sv-${id}" min="${today()}" title="Fin de l'assurance" style="width:140px;padding:6px;margin:0"><button class="btn small" onclick="const d=$('#sv-${id}').value; if(!d) return toast('Date de fin de l\\'assurance ?'); setVerified('${id}',true,this,d)">OK</button></span>`; return toast('Indique la date de fin de l\'assurance'); }
+  btn.disabled=true; const {error}=await sb.rpc('admin_set_verified',v?{target:id,v,until}:{target:id,v}); if(error){btn.disabled=false;return toast(errMsg(error));}
+  const u=(openAdmin._data||[]).find(x=>x.uid===id); if(u){ u.verified=v; if(v) u.verified_until=until; } if(id===user.id) me.verified=v; toast(v?'Badge ✓ Vérifié attribué':'Badge retiré'); $('#aq').oninput(); }
 
 /* ======== Notifications push & installation ======== */
 const VAPID_PUBLIC = 'BJia9at-iq50E19jBzEqJGQObS3Y6qHSmv44eUAcS-fxxoEjs-0EQD2NvMzhEdGl6OvQNE-jVvj6tOnPqIlerEQ';
@@ -950,6 +961,22 @@ async function openFeedTrip(id){ if(mode!=='passenger' && typeof setMode==='func
 let ANNC=[];
 const ANN_AUD={all:'Tout le monde',drivers:'Conducteurs',passengers:'Passagers',new:'Nouveaux inscrits (7 j)',unverified:'Non vérifiés'};
 function annSeen(){ try{ return JSON.parse(localStorage.getItem('covoit_ann')||'[]'); }catch(e){ return []; } }
+async function checkCert(){ try{ if(!user||!me) return;
+  if(me.verified_until && daysTo(me.verified_until)<=30){ let last=0; try{ last=+localStorage.getItem('covoit_badge_nag')||0; }catch(e){}
+    if(Date.now()-last>3*864e5 && $('#bg').style.display!=='flex'){ const {data:rq}=await sb.from('verif_requests').select('status').eq('user_id',user.id).maybeSingle();
+      if(rq?.status!=='pending'){ try{ localStorage.setItem('covoit_badge_nag',Date.now()); }catch(e){}
+        sheet(`<h3>⌛ Ton badge ✓ Vérifié ${me.verified?'expire le '+fdate(me.verified_until):'a expiré'}</h3><p class="hint">Envoie ta nouvelle attestation d'assurance (une seule photo, 1 minute) pour ${me.verified?'le garder':'le retrouver'}.</p>
+          <button class="btn" onclick="closeSheet();go('profile');setTimeout(()=>$('#vcard')?.scrollIntoView({block:'center'}),600)">Renouveler maintenant</button><button class="btn sec" onclick="closeSheet()">Plus tard</button>`); return; } } }
+  if(me.verified) return;
+  const {count}=await sb.from('trips').select('id',{count:'exact',head:true}).eq('driver_id',user.id).gt('depart_at',new Date().toISOString()).is('driver_cert_at',null);
+  if(!count) return; if($('#bg').style.display==='flex') return setTimeout(checkCert,8000);
+  sheet(`<h3>✍️ Une petite confirmation</h3><p class="hint">Tu as ${count} trajet${count>1?'s':''} à venir publié${count>1?'s':''} avant la mise à jour. Pour rassurer les passagers, confirme que tes papiers sont en règle.</p>
+   <label style="display:flex;align-items:flex-start;gap:10px;color:var(--t);font-size:14px;margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:12px"><input type="checkbox" id="ccert" style="width:22px;height:22px;flex:none;margin-top:1px"> <span>${CERT_TXT}</span></label>
+   <button class="btn" id="ccgo" onclick="doCertTrips()">Confirmer</button><button class="btn sec" onclick="closeSheet()">Plus tard</button>
+   <div class="hint">Encore plus simple : fais vérifier ton profil (2 min) et tu n'auras plus jamais à cocher cette case.</div>`); }catch(e){} }
+async function doCertTrips(){ if(!$('#ccert').checked) return toast('Coche la case pour confirmer'); $('#ccgo').disabled=true;
+  const {data,error}=await sb.rpc('certify_my_trips',{v:CERT_V}); if(error){ $('#ccgo').disabled=false; return toast(errMsg(error)); }
+  closeSheet(); toast(`Merci ✍️ ${data||0} trajet${data>1?'s':''} confirmé${data>1?'s':''}`); }
 async function loadAnnc(){ try{ const {data}=await sb.from('announcements').select('id,title,body,audience').order('created_at',{ascending:false}); ANNC=data||[]; showAnnc(); }catch(e){} }
 function showAnnc(){ const el=$('#annc'); if(!el) return; const seen=annSeen(), fresh=me?.created_at && Date.now()-new Date(me.created_at)<7*864e5;
   const ok=a=> a.audience==='all' || (user && ((a.audience==='drivers'&&mode==='driver')||(a.audience==='passengers'&&mode==='passenger')||(a.audience==='new'&&fresh)||(a.audience==='unverified'&&me&&!me.verified)));
@@ -1181,7 +1208,7 @@ async function openChat(bid, other){
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
-(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadAnnc(); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
+(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadAnnc(); setTimeout(checkCert, 4000); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
 </script>
 </body>
 </html>

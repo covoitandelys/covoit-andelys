@@ -81,6 +81,9 @@ nav button{position:relative}nav .dot{position:absolute;top:0;left:55%}
 <div class="feedb" id="feedb"></div>
 
 <script>
+const APP_VERSION='2026-11-12';
+window.__errs=[]; window.addEventListener('error',e=>{ try{ __errs.push(String(e.message||e).slice(0,200)); __errs=__errs.slice(-3); }catch(_){} });
+window.addEventListener('unhandledrejection',e=>{ try{ __errs.push(String(e.reason?.message||e.reason).slice(0,200)); __errs=__errs.slice(-3); }catch(_){} });
 /* ======== CONFIGURATION : colle ici tes 2 valeurs Supabase (Project Settings > API) ======== */
 const SUPABASE_URL = 'https://ntqdmoeqeuoxojhdyrby.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_LnPPU-93ttb-kneXOKWddQ_SfHCLsja';
@@ -204,6 +207,7 @@ function errMsg(e){const m=(e&&e.message)||'';
  if(m.includes('Password should'))return 'Mot de passe trop court (6 caractères minimum)';
  if(m.includes('Compte bloqué'))return 'Ton compte est bloqué. Écris à contact@covoit-andelys.fr si tu penses que c\'est une erreur.';
  if(m.includes('row-level security'))return 'Action non autorisée';
+ if(m.includes('foreign key')||m.includes('violates foreign'))return 'Ce trajet n\'est plus disponible : il a été annulé';
  return m || 'Erreur, réessaie';}
 
 const configured = !SUPABASE_URL.startsWith('COLLE');
@@ -284,8 +288,9 @@ function applyMode(){
   nb('offer').style.display = mode==='driver' ? '' : 'none';
   nb('mine').childNodes[1].textContent = mode==='driver' ? 'Mes trajets' : 'Mes réservations';
 }
+let RID=0;
 async function render(){
-  applyMode(); showAnnc();
+  const rid=++RID; applyMode(); showAnnc();
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
   const v = $('#view');
   if (!configured){ v.innerHTML = `<div class="card"><h3>Configuration manquante</h3><div class="hint">Colle l'adresse et la clé de ton projet Supabase en haut du fichier <b>index.html</b> (lignes « COLLE_ICI »).</div></div>`; return; }
@@ -315,6 +320,7 @@ async function render(){
     if (filter.women) q = q.eq('women_only', true);
     if (filter.soon) q = q.lt('depart_at', new Date(Date.now()+2*36e5).toISOString());
     let { data, error } = await q;
+    if (rid!==RID) return;   // un autre filtre a été choisi entre-temps
     if (!error && filter.verified) data = data.filter(t=>t.driver?.verified);
     if (!error && filter.avail) data = data.filter(t=>t.seats-t.booked>0);
     // Trajets réguliers : on n'affiche que la prochaine date (sauf si une date précise est choisie)
@@ -328,6 +334,7 @@ async function render(){
         const dk=x=>new Date(x).toDateString();
         data.forEach(t=>{ const r=(rv||[]).filter(r=>r.driver_id===t.driver_id&&r.from_place===t.to_place&&r.to_place===t.from_place&&dk(r.depart_at)===dk(t.depart_at)&&new Date(r.depart_at)>new Date(t.depart_at)).sort((a,b)=>new Date(a.depart_at)-new Date(b.depart_at))[0];
           if(r) t._ret=hm(new Date(r.depart_at)); }); } }catch(e){}
+    if (rid!==RID) return;
     if(filter.from||filter.to){ const k=[filter.from,filter.to,filter.date,filter.period].join('|'); window._logged=window._logged||new Set();
       if(!window._logged.has(k)){ window._logged.add(k); sb.rpc('log_search',{p_from:filter.from||'',p_to:filter.to||'',p_date:filter.date||null,p_period:filter.date?'date':filter.period,p_results:data.length}).then(()=>{},()=>{}); } }
     $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
@@ -423,7 +430,7 @@ async function render(){
        <label id="cguw" style="display:flex;gap:10px;align-items:flex-start;color:var(--t);font-weight:600;font-size:14px;margin-top:14px"><input type="checkbox" id="acgu" style="width:22px;height:22px;flex:none;margin-top:2px"><span>J'ai 18 ans ou plus et j'accepte les <button class="link" type="button" onclick="openLegal('cgu')">CGU</button> et la <button class="link" type="button" onclick="openLegal('privacy')">politique de confidentialité</button>.</span></label>
        <button class="btn" id="ago">Créer mon compte</button>
        <button class="link" id="asw" style="display:none">J'ai déjà un compte</button>
-       <button class="link" id="afg" style="margin:12px auto 0;display:none;width:100%" onclick="forgotPw()">🔑 Mot de passe oublié ?</button></div>${infoCard()}${legalLinks()}`;
+       <button class="link" id="afg" style="margin:12px auto 0;display:none;width:100%" onclick="forgotPw()">🔑 Mot de passe oublié ?</button></div>${infoCard()}<button class="btn sec" onclick="openBug()">🐞 Un problème pour t'inscrire ou te connecter ?</button>${legalLinks()}`;
       let login=false;
       $('#asw').onclick=()=>{login=!login;$('#ah').textContent=login?'Se connecter':'Créer un compte';$('#fnw').style.display=login?'none':'block';$('#cguw').style.display=login?'none':'flex';
         $('#ago').textContent=login?'Se connecter':'Créer mon compte';$('#afg').style.display=login?'block':'none';$('#asw').textContent=login?'Créer un compte':"J'ai déjà un compte";
@@ -467,7 +474,7 @@ async function render(){
         : `<div class="hint">Pour recevoir les paiements par carte, crée ton compte de réception Stripe (pièce d'identité + IBAN, environ 5 minutes). Gratuit pour le conducteur. Tu es payé après chaque trajet : ${PAYOUT_TXT}</div><div class="hint" id="stst"></div><button class="btn" id="stbtn" onclick="stripeOnboard()">Activer le paiement par carte</button>`}</div>
       <div class="card" id="vcard"><h3>🪪 Badge ✓ Vérifié</h3><div class="hint">Chargement…</div></div>
       ${me?.is_admin?`<div class="card"><h3>🛠️ Administration</h3><div class="hint">Donne ou retire le badge ✓ Vérifié après avoir contrôlé la pièce d'identité, le permis et l'assurance.</div><button class="btn" onclick="openAdmin()">Demandes de badge et membres</button></div>`:''}
-      ${infoCard()}${fbButton()}<button class="btn sec" onclick="logout()">Se déconnecter</button>${legalLinks()}<div style="text-align:center;margin:6px 0 20px"><button class="link" style="color:#b91c1c" onclick="askDeleteAccount()">Supprimer mon compte</button></div>`;
+      ${infoCard()}<button class="btn sec" onclick="openBug()">🐞 Signaler un problème technique</button>${fbButton()}<button class="btn sec" onclick="logout()">Se déconnecter</button>${legalLinks()}<div style="text-align:center;margin:6px 0 20px"><button class="link" style="color:#b91c1c" onclick="askDeleteAccount()">Supprimer mon compte</button></div>`;
     $('#pav').onchange=e=>{ if(e.target.files[0]) uploadAvatar(e.target.files[0]); };
     loadVerifCard(); pushState(); loadAlerts(); loadProgress();
   }
@@ -550,6 +557,22 @@ function openLegal(k){sheet(`<div class="legal">${LEGAL[k]}</div><button class="
 function legalLinks(){return `<div class="hint" style="text-align:center;margin:18px 0 6px"><button class="link" onclick="openFAQ()">FAQ</button> · <button class="link" onclick="openFB()">Facebook</button> · <button class="link" onclick="openLegal('cgu')">CGU</button> · <button class="link" onclick="openLegal('privacy')">Confidentialité</button> · <button class="link" onclick="openLegal('mentions')">Mentions légales</button></div>`;}
 
 const FAQ = [["Est-ce légal ?", "Oui. Le covoiturage est défini par la loi (article L3132-1 du Code des transports) : le conducteur fait un trajet <b>pour lui-même</b> et partage seulement les frais, <b>sans bénéfice</b>. L'appli plafonne donc les prix au barème kilométrique divisé par le nombre d'occupants, et limite chaque conducteur à 4 trajets par jour."], ["Les passagers sont-ils assurés ?", "Oui. L'assurance auto obligatoire du conducteur (responsabilité civile) couvre ses passagers en covoiturage, tant qu'il ne fait que partager les frais. C'est la position de la DGCCRF (economie.gouv.fr). Le badge ✓ Vérifié indique que nous avons contrôlé le permis et l'assurance du conducteur."], ["C'est comme un taxi ?", "Non. Un taxi ou un VTC transporte des clients contre rémunération. Ici, le conducteur fait son propre trajet et propose ses places libres pour partager l'essence. Il ne gagne pas d'argent."], ["Combien ça coûte ?", "L'inscription est gratuite. Le prix d'une place est fixé par le conducteur, plafonné par la loi (souvent 1 à 4 € pour un trajet local). Payé en espèces ou par PayPal : aucun frais. Payé par carte dans l'appli : +10 % de frais de service (minimum 0,50 €)."], ["Comment installer l'appli sur Android ou iPhone ?", "Pas besoin du Play Store. <b>Android</b> : ouvre le lien dans Chrome → Profil → 📲 Installer l'appli (ou menu ⋮ → Installer l'application). <b>iPhone</b> : ouvre le lien dans Safari → bouton Partager ⬆️ → « Sur l'écran d'accueil »."], ["Comment être prévenu ?", "Profil → 🔔 Activer les notifications. Tu reçois une alerte pour les demandes, réponses, messages et nouveaux trajets. Tu peux aussi créer une <b>alerte trajet</b> (ex : Les Andelys → Vernon le matin)."], ["Ma commune n'est pas dans la liste", "Tape simplement son nom : toutes les communes de l'Eure et des départements voisins sont proposées. Le conducteur peut aussi préciser un point de rendez-vous ou les communes traversées dans le message du trajet."], ["Comment obtenir le badge ✓ Vérifié ?", "Profil → Badge ✓ Vérifié → envoie ta pièce d'identité, ton permis et ton attestation d'assurance. Nous les contrôlons puis les supprimons dès la réponse."], ["Et si je dois annuler ?", "Annule le plus tôt possible dans Mes trajets / Mes réservations : l'autre personne est prévenue automatiquement. Pour un paiement par carte, contacte-nous pour le remboursement."], ["Un enfant peut-il voyager ?", "Oui, uniquement accompagné d'un adulte qui réserve pour lui et apporte le siège auto ou rehausseur adapté. Un mineur ne peut pas voyager seul."], ["Un problème avec un membre ?", "Utilise « 🚩 Signaler un problème » dans le chat ou sur la fiche du conducteur. En cas d'urgence, appelle le 17 ou le 112."], ["Comment supprimer mon compte ?", "Profil → tout en bas → « Supprimer mon compte ». Tes trajets et réservations à venir sont annulés et les personnes concernées prévenues. Une copie de ton historique est gardée 1 an, visible de l'équipe seulement, en cas de litige, puis effacée."], ["Comment marche le paiement par carte ?", "À la réservation, la somme est seulement <b>bloquée</b> sur la carte du passager : c'est un <b>paiement garanti</b> pour le conducteur. Elle est débitée après le trajet (quand le passager appuie sur « Trajet effectué », ou automatiquement 12 h après le départ), et <b>libérée sans frais</b> si le trajet est annulé. Le paiement par carte s'ouvre 6 jours avant le départ, car une banque ne garde une somme bloquée que 7 jours."], ["Quand le conducteur reçoit-il l'argent payé par carte ?", "Après le trajet, une fois le paiement encaissé. Stripe vire ensuite sa part sur son compte bancaire sous <b>3 à 5 jours ouvrés</b> environ (une dizaine de jours pour le tout premier paiement). Pour être payé tout de suite, il reste les espèces ou PayPal."], ["Comment vous contacter ?", "Par e-mail : contact@covoit-andelys.fr, ou en message sur notre page Facebook Covoit' Andelys."]];
+const bugCtx = () => ({ page:tab, mode, version:APP_VERSION, navigateur:navigator.userAgent, ecran:`${innerWidth}×${innerHeight}`,
+  appli_installee:(typeof isStandalone==='function'&&isStandalone())?'oui':'non', heure:new Date().toLocaleString('fr-FR'),
+  erreurs:(window.__errs||[]).join(' | ')||'aucune' });
+function openBug(){
+  if(!user){ const c=bugCtx(); const body='Bonjour,\n\nVoici le problème rencontré (ce que je faisais, ce qui s\'est passé) :\n\n\n\n— Infos techniques (ne pas effacer) —\n'+Object.entries(c).map(([k,v])=>k+' : '+v).join('\n');
+    location.href='mailto:contact@covoit-andelys.fr?subject='+encodeURIComponent('🐞 Problème technique (non connecté)')+'&body='+encodeURIComponent(body); return; }
+  sheet(`<h2>🐞 Signaler un problème technique</h2><div class="hint">Un bouton qui ne marche pas, une page qui ne s'affiche pas, un message d'erreur ? Explique ce que tu faisais et ce qui s'est passé.</div>
+    <textarea id="bugm" rows="5" maxlength="2000" placeholder="Ex : quand j'appuie sur « Publier », rien ne se passe…"></textarea>
+    <div class="note">📸 Si tu peux, envoie-nous aussi <b>une capture d'écran</b> ou <b>toute information utile</b> à <a href="mailto:contact@covoit-andelys.fr?subject=Capture%20du%20probl%C3%A8me">contact@covoit-andelys.fr</a>.</div>
+    <div class="hint">ℹ️ Un souci avec un conducteur, un passager ou un trajet ? Utilise plutôt le bouton <b>🚩 Signaler</b> sur le trajet ou le profil concerné.</div>
+    <div class="hint">🔧 Quelques infos techniques sont ajoutées automatiquement : modèle de téléphone et navigateur, page ouverte, heure. Rien d'autre.</div>
+    <button class="btn" onclick="sendBug(this)">Envoyer</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`); }
+async function sendBug(btn){ const msg=$('#bugm').value.trim(); if(msg.length<5) return toast('Décris le problème en quelques mots');
+  btn.disabled=true; const {error}=await sb.rpc('report_bug',{msg, ctx:bugCtx()});
+  if(error){ btn.disabled=false; return toast(errMsg(error)); }
+  closeSheet(); toast('Merci ! Signalement envoyé 🙏'); }
 function openFAQ(){ sheet(`<h2>❓ Questions fréquentes</h2>${FAQ.map(([q,a])=>`<details style="border-bottom:1px solid var(--b);padding:10px 0"><summary style="font-weight:800;cursor:pointer">${q}</summary><div class="hint" style="font-size:14px;margin-top:6px">${a}</div></details>`).join('')}<button class="btn sec" style="margin-top:14px" onclick="closeSheet()">Fermer</button>`); $('#sheet').scrollTop=0; }
 function infoCard(){return `<div class="card"><h3>Comment ça marche</h3><div class="hint" style="font-size:14px">
  1. Le conducteur publie un trajet qu'il fait déjà.<br>2. Le passager demande une place, le conducteur l'accepte, et ils échangent dans l'appli sans partager de numéro.<br>
@@ -560,7 +583,9 @@ function go(t){tab=t;render();scrollTo(0,0);}
 
 function openTrip(id){
   if (!user){ toast('Crée un compte pour réserver'); return go('profile'); }
-  const t = tripsCache.find(x=>x.id===id), left=t.seats-t.booked, d=new Date(t.depart_at); bookInstant=t.instant;
+  const t = tripsCache.find(x=>x.id===id);
+  if (!t){ toast('Ce trajet n\'est plus disponible'); return render(); }
+  const left=t.seats-t.booked, d=new Date(t.depart_at); bookInstant=t.instant;
   sheet(`<h2>${esc(t.from_place)} → ${esc(t.to_place)}</h2><div class="hint">${dayLabel(d)} à ${hm(d)} · ${t.km} km · <b style="color:var(--g)">${seatsText(left,t.seats)}</b></div>
     <div class="card" style="box-shadow:none;border:1px solid var(--b);margin-top:12px"><div class="drv">${av(t.driver?.first_name, t.driver?.avatar_url, 56)}<div><b style="font-size:18px">${esc(t.driver?.first_name)}</b>${stars(t.driver)}${badge(t.driver)}<br><small class="hint" id="dstats">…</small></div></div>
      ${t.driver?.bio?`<div class="hint" style="font-style:italic">« ${esc(t.driver.bio)} »</div>`:''}
@@ -591,7 +616,7 @@ let bookInstant=false;
 async function book(id){ const tt=tripsCache.find(x=>x.id===id); const unv=!tt?.driver?.verified;
   if(unv && !$('#back')?.checked) return toast('Coche la case de mise en garde pour réserver');
   $('#bgo').disabled=true;const {error}=await sb.from('bookings').insert({trip_id:id,seats:+$('#bn').value,children:+($('#bk')?.value||0),...(unv?{ack_v:ACK_V}:{})});
-  if(error){$('#bgo').disabled=false;return toast(errMsg(error));} closeSheet(); toast(bookInstant?'Place réservée ✅':'Demande envoyée ⏳ Le conducteur va te répondre'); go('mine');
+  if(error){$('#bgo').disabled=false; toast(errMsg(error)); if(/plus disponible/.test(errMsg(error))){ closeSheet(); render(); } return;} closeSheet(); toast(bookInstant?'Place réservée ✅':'Demande envoyée ⏳ Le conducteur va te répondre'); go('mine');
   if(!fbAsked()) setTimeout(()=>sheet(`<h2>Merci ! 🙏</h2><div class="hint">Covoit' Andelys grandit grâce au bouche-à-oreille. Suis notre page Facebook et partage-la à tes voisins et collègues : plus on est nombreux, plus il y a de trajets.</div>${fbButton()}<button class="btn sec" onclick="try{localStorage.setItem('covoit_fb','later')}catch(e){};closeSheet()">Plus tard</button>`),1500);}
 async function respond(id, ok){const {error}=await sb.rpc('respond_booking',{b:id,accept:ok}); if(error)return toast(errMsg(error)); toast(ok?'Passager accepté ✅':'Demande refusée'); render();}
 function cancelB(id, held){ sheet(`<h2>Annuler ta réservation ?</h2><div class="hint">Le conducteur sera prévenu et la place sera de nouveau disponible.</div>${held?'<div class="note">💳 La somme bloquée sur ta carte sera <b>libérée</b> : tu ne paies rien.</div>':''}
@@ -1264,7 +1289,7 @@ async function openChat(bid, other){
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
-(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadAnnc(); setTimeout(checkCert, 4000); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
+(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); if(ev==='SIGNED_IN') setTimeout(checkCert, 3000); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadAnnc(); setTimeout(checkCert, 4000); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
 </script>
 </body>
 </html>

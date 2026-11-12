@@ -561,17 +561,30 @@ const bugCtx = () => ({ page:tab, mode, version:APP_VERSION, navigateur:navigato
   appli_installee:(typeof isStandalone==='function'&&isStandalone())?'oui':'non', heure:new Date().toLocaleString('fr-FR'),
   erreurs:(window.__errs||[]).join(' | ')||'aucune' });
 function openBug(){
+  bugImgs=[];
   if(!user){ const c=bugCtx(); const body='Bonjour,\n\nVoici le problème rencontré (ce que je faisais, ce qui s\'est passé) :\n\n\n\n— Infos techniques (ne pas effacer) —\n'+Object.entries(c).map(([k,v])=>k+' : '+v).join('\n');
     location.href='mailto:contact@covoit-andelys.fr?subject='+encodeURIComponent('🐞 Problème technique (non connecté)')+'&body='+encodeURIComponent(body); return; }
   sheet(`<h2>🐞 Signaler un problème technique</h2><div class="hint">Un bouton qui ne marche pas, une page qui ne s'affiche pas, un message d'erreur ? Explique ce que tu faisais et ce qui s'est passé.</div>
     <textarea id="bugm" rows="5" maxlength="2000" placeholder="Ex : quand j'appuie sur « Publier », rien ne se passe…"></textarea>
-    <div class="note">📸 Si tu peux, envoie-nous aussi <b>une capture d'écran</b> ou <b>toute information utile</b> à <a href="mailto:contact@covoit-andelys.fr?subject=Capture%20du%20probl%C3%A8me">contact@covoit-andelys.fr</a>.</div>
+    <label class="btn sec" style="display:block;text-align:center;cursor:pointer;margin-top:8px">📸 Joindre une capture d'écran (facultatif)<input type="file" id="bugf" accept="image/*" multiple style="display:none" onchange="bugPick(this)"></label>
+    <div id="bugp" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    <div class="hint">2 images maximum. Une autre information utile ? Écris-la dans le message, ou à <a href="mailto:contact@covoit-andelys.fr">contact@covoit-andelys.fr</a>.</div>
     <div class="hint">ℹ️ Un souci avec un conducteur, un passager ou un trajet ? Utilise plutôt le bouton <b>🚩 Signaler</b> sur le trajet ou le profil concerné.</div>
     <div class="hint">🔧 Quelques infos techniques sont ajoutées automatiquement : modèle de téléphone et navigateur, page ouverte, heure. Rien d'autre.</div>
     <button class="btn" onclick="sendBug(this)">Envoyer</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`); }
+let bugImgs=[];
+const blob64 = b => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(b); });
+async function bugPick(inp){ const files=[...inp.files].slice(0, 2-bugImgs.length); inp.value='';
+  if(!files.length) return toast('2 images maximum');
+  for(const f of files){ try{ const blob=await resizeMax(f, 1400); bugImgs.push({b64:await blob64(blob), url:URL.createObjectURL(blob)}); }catch(e){ toast('Image illisible'); } }
+  drawBugImgs(); }
+function drawBugImgs(){ const el=$('#bugp'); if(!el) return;
+  el.innerHTML=bugImgs.map((x,i)=>`<div style="position:relative"><img src="${x.url}" style="width:72px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--b)"><button type="button" onclick="bugImgs.splice(${i},1);drawBugImgs()" style="position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:0;background:#b91c1c;color:#fff;font-weight:700">×</button></div>`).join(''); }
 async function sendBug(btn){ const msg=$('#bugm').value.trim(); if(msg.length<5) return toast('Décris le problème en quelques mots');
-  btn.disabled=true; const {error}=await sb.rpc('report_bug',{msg, ctx:bugCtx()});
-  if(error){ btn.disabled=false; return toast(errMsg(error)); }
+  btn.disabled=true; btn.textContent=bugImgs.length?'Envoi des captures…':'Envoi…';
+  const {error}=await sb.rpc('report_bug',{msg, ctx:bugCtx(), imgs:bugImgs.map(x=>x.b64)});
+  if(error){ btn.disabled=false; btn.textContent='Envoyer'; return toast(errMsg(error)); }
+  bugImgs=[];
   closeSheet(); toast('Merci ! Signalement envoyé 🙏'); }
 function openFAQ(){ sheet(`<h2>❓ Questions fréquentes</h2>${FAQ.map(([q,a])=>`<details style="border-bottom:1px solid var(--b);padding:10px 0"><summary style="font-weight:800;cursor:pointer">${q}</summary><div class="hint" style="font-size:14px;margin-top:6px">${a}</div></details>`).join('')}<button class="btn sec" style="margin-top:14px" onclick="closeSheet()">Fermer</button>`); $('#sheet').scrollTop=0; }
 function infoCard(){return `<div class="card"><h3>Comment ça marche</h3><div class="hint" style="font-size:14px">

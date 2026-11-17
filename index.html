@@ -153,9 +153,20 @@ const jsq = s => esc(String(s ?? '').replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
 const eur = n => Number(n).toFixed(2).replace('.', ',') + ' €';
 function km(a,b){if(!PLACES[a]||!PLACES[b]) return 0; const [la1,lo1]=PLACES[a],[la2,lo2]=PLACES[b],r=Math.PI/180;
  const d=2*6371*Math.asin(Math.sqrt(Math.sin((la2-la1)*r/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin((lo2-lo1)*r/2)**2));return Math.max(1,Math.round(d*1.3));}
-const fuelCost = (a,b) => km(a,b)*CONSO/100*FUEL;
+let FUELP = null;   // prix moyen du jour dans l'Eure (table fuel_price), sinon valeurs par défaut
+const ELEC = 0.25;  // €/kWh, estimation recharge à domicile
+const CONS = { essence:{petite:5,moyenne:6,grande:8}, diesel:{petite:4.5,moyenne:5.5,grande:7}, gpl:{petite:6.5,moyenne:7.5,grande:10}, electrique:{petite:14,moyenne:17,grande:22} };
+const FUEL_NAME = {essence:'essence',diesel:'diesel',gpl:'GPL',electrique:'électrique'};
+const vehicle = () => { const f=CONS[me?.fuel_type]?me.fuel_type:'essence', z=['petite','moyenne','grande'].includes(me?.car_size)?me.car_size:'moyenne';
+  if (isMicro(me?.car_model)) return {f:'diesel', c:3.5, unit:'L', price:+FUELP?.diesel||FUEL, micro:true};
+  if (f==='electrique') return {f, c:CONS.electrique[z], unit:'kWh', price:ELEC};
+  const price = f==='diesel' ? (+FUELP?.diesel||FUEL) : f==='gpl' ? (+FUELP?.gpl||FUEL*0.55) : (+FUELP?.essence||FUEL);
+  return {f, c:CONS[f][z], unit:'L', price}; };
+const fuelCost = (a,b) => { const v=vehicle(); return km(a,b)*v.c/100*v.price; };
+async function loadFuel(){ try{ const {data}=await sb.from('fuel_price').select('essence,diesel,gpl,updated_at').eq('id',1).maybeSingle();
+  if(data?.essence && data.updated_at && Date.now()-new Date(data.updated_at)<10*864e5) FUELP=data; }catch(e){} }
 const MIN_PRICE = 1;
-const suggested = (a,b,s) => Math.max(MIN_PRICE, Math.round(fuelCost(a,b)/(s+1)*2)/2);
+const suggested = (a,b,s) => Math.max(MIN_PRICE, Math.round(fuelCost(a,b)/2*2)/2);   // essence partagée entre le conducteur et 1 passager (cas le plus fréquent)
 const minPrice = (a,b,s) => Math.min(MIN_PRICE, maxPrice(a,b,s));
 const maxPrice = (a,b,s) => Math.floor(km(a,b)*BAREME/(s+1)*2)/2;
 const dur = k => Math.round(k*1.1+5);
@@ -268,8 +279,8 @@ function tripCard(t, actions){
    <div class="times">${hm(d)}<small>${hm(new Date(d.getTime()+dur(k)*6e4))}</small></div>
    <div class="route"><b>${esc(t.from_place)}</b><span>↓ ${k} km · ~${dur(k)} min</span><b>${esc(t.to_place)}</b></div>
    <div class="price">${eur(t.price)}<small>par place</small></div></div>
-   <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)} · `:''}${tripOpts(t)}</div>${t._ret?`<div class="hint" style="color:var(--g);font-weight:700;margin-top:2px">↩️ Retour possible le même jour à ${t._ret}</div>`:''}
-   ${t.meeting_point||t.meet_lat?`<div class="hint">📍 RDV : ${esc(t.meeting_point||'point sur la carte')}${t.meet_lat?` · <a href="${gmapsUrl(t)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🗺️ Itinéraire</a>`:''}</div>`:''}
+   <div class="hint">${t.driver?.fuel_type==='electrique'?'<span class="tag t-ok">⚡ Voiture électrique</span> ':''}${carText(t.driver)?`🚗 ${carText(t.driver)} · `:''}${tripOpts(t)}</div>${t._ret?`<div class="hint" style="color:var(--g);font-weight:700;margin-top:2px">↩️ Retour possible le même jour à ${t._ret}</div>`:''}
+   ${t.meeting_point||t.meet_lat?`<div class="hint">📍 RDV : ${esc(t.meeting_point||'point sur la carte')}${mpTags(t.meeting_point)}${(t.meet_lat||t.meeting_point)?` · <a href="#" onclick="event.preventDefault();event.stopPropagation();gpsToggle(this,'inline')">🧭 Y aller</a><span style="display:none"> : ${gpsList(t).map(([n,u])=>`<a href="${u}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${n}</a>`).join(' · ')}</span>`:''}</div>`:''}
    <div class="hint" style="font-weight:700;color:${left>0?'var(--g)':'#b91c1c'}">${seatsText(left,t.seats)}</div>
    ${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}
    <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${stars(t.driver)}${badge(t.driver)||(t.driver&&t.driver.first_name?'<span class="tag" style="background:#f3f4f6;color:#6b7280">Profil non vérifié</span>':'')}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}${soonText(d)?`<span class="tag new">⏱ ${soonText(d)}</span>`:''}<br><small style="color:var(--m)">${dayLabel(d)}${t.driver?.created_at?' · '+sinceText(t.driver.created_at):''}</small></div></div>
@@ -310,7 +321,7 @@ async function render(){
      <div id="list"><div class="empty">Chargement des trajets…</div></div>`;
     wirePlace('ff',v=>{filter={...filter,from:v};render();}); wirePlace('ft',v=>{filter={...filter,to:v};render();});
     $('#fd').onchange=()=>{filter={...filter,date:$('#fd').value};render();};
-    let q = sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at)').gte('depart_at', new Date(Date.now()-15*6e4).toISOString()).order('depart_at').limit(100);
+    let q = sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type)').gte('depart_at', new Date(Date.now()-15*6e4).toISOString()).order('depart_at').limit(100);
     if (filter.from) q = q.eq('from_place', filter.from);
     if (filter.to) q = q.eq('to_place', filter.to);
     if (filter.date){ const s=new Date(filter.date+'T00:00'); q = q.gte('depart_at', s.toISOString()).lt('depart_at', new Date(s.getTime()+864e5).toISOString()); }
@@ -364,7 +375,8 @@ async function render(){
      <div class="hint" id="oh2"></div>
      <label>Message (facultatif)</label><input id="on" maxlength="200" placeholder="Ex : départ place Nicolas Poussin">
      <label>Bagages</label><select id="olg"><option value="none">🚫 Pas de bagage</option><option value="small" selected>🎒 Petit bagage (sac, cabas)</option><option value="large">🧳 Valise acceptée</option></select>
-     <label>Point de rendez-vous précis (facultatif)</label><input id="omp" maxlength="120" placeholder="Ex : parking de la mairie, devant la pharmacie">
+     <label>Point de rendez-vous</label><input id="omp" maxlength="120" placeholder="Ex : parking de la mairie, devant la pharmacie">
+     <div id="opart"></div>
      <button class="btn sec small" type="button" id="omb" style="margin-top:8px" onclick="openMeetMap()">🗺️ Placer sur la carte</button>
      <div class="chips"><button class="chip" id="opt" onclick="this.classList.toggle('on')">🐾 Animaux acceptés</button><button class="chip" id="om2" onclick="this.classList.toggle('on')">💺 Max 2 à l'arrière</button>
      <button class="chip" id="oi" onclick="this.classList.toggle('on')">⚡ Réservation instantanée</button><button class="chip" id="ow" onclick="this.classList.toggle('on')">♀ Réservé aux femmes</button></div>
@@ -379,8 +391,12 @@ async function render(){
       if (a===b){ $('#oh2').textContent='Choisis deux communes différentes.'; return; }
       const dm=demandFor(a,b);
       const p=suggested(a,b,s), mx=maxPrice(a,b,s); $('#op').value=Math.min(p,mx);
-      $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · minimum <b>${eur(minPrice(a,b,s))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>⛽ ${km(a,b)} km × ${CONSO} L/100 × ${eur(FUEL)}/L = ${eur(fuelCost(a,b))} ÷ ${s+1} occupants</small>${dm?`<br><b style="color:var(--g)">🙋 ${dm} passager${dm>1?'s':''} ${dm>1?'cherchent':'cherche'} ce trajet : ${dm>1?'ils seront prévenus':'il sera prévenu'} si l'horaire correspond !</b>`:''}`; };
-    wirePlace('of',upd); wirePlace('ot',upd); $('#os').onchange=upd; upd(); loadDemand().then(upd);
+      $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · minimum <b>${eur(minPrice(a,b,s))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>${(v=>`⛽ ${km(a,b)} km × ${String(v.c).replace('.',',')} ${v.unit}/100 × ${eur(v.price)}/${v.unit} = ${eur(fuelCost(a,b))} ÷ 2 (vous + 1 passager)<br>${v.unit==='kWh'?'🔌 électrique : recharge estimée à domicile':FUELP?`prix moyen ${v.f==='gpl'?'du GPL':v.f==='diesel'?'du diesel':'de l\'essence'} dans l'Eure au ${new Date(FUELP.updated_at).toLocaleDateString('fr-FR')}`:'prix moyen estimé'} · ${v.micro?'voiturette':FUEL_NAME[v.f]+', voiture '+(me?.car_size||'moyenne')} <button class="link" style="font-size:inherit" onclick="go('profile');setTimeout(()=>$('#pfuel')?.scrollIntoView({block:'center'}),500)">modifier</button>`)(vehicle())}</small><div id="oest"></div>${dm?`<br><b style="color:var(--g)">🙋 ${dm} passager${dm>1?'s':''} ${dm>1?'cherchent':'cherche'} ce trajet : ${dm>1?'ils seront prévenus':'il sera prévenu'} si l'horaire correspond !</b>`:''}`; };
+    const est = () => { const el=$('#oest'); if(!el) return; const p=+$('#op').value||0, s=+$('#os').value; if(!p||!$('#oh2 b')){ el.innerHTML=''; return; }
+      el.innerHTML=`<div class="hint" style="margin-top:6px">💶 Vous récupérez de <b>${eur(p)}</b> (1 passager) à <b>${eur(p*s)}</b> (${s} passager${s>1?'s':''}) par trajet · <button class="link" style="font-size:inherit" onclick="openEstim()">Voir l'estimation ›</button></div>`; };
+    const upd2 = () => { upd(); est(); meetChips(); };
+    wirePlace('of',upd2); wirePlace('ot',upd2); $('#os').onchange=upd2; $('#op').oninput=est; upd2(); loadDemand().then(upd2);
+    document.querySelectorAll('#orc,#oretc,.ord').forEach(x=>x.addEventListener('click',()=>setTimeout(est,0))); $('#orw').onchange=est;
   }
 
   if (tab==='mine'){
@@ -388,7 +404,7 @@ async function render(){
     v.innerHTML = '<div class="empty">Chargement…</div>';
     const seenBefore = me?.mine_seen_at; await refreshNotif();
     const [bk, mt] = await Promise.all([
-      sb.from('bookings').select('*, trip:trips(*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at))').eq('passenger_id', user.id).order('created_at',{ascending:false}),
+      sb.from('bookings').select('*, trip:trips(*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type))').eq('passenger_id', user.id).order('created_at',{ascending:false}),
       sb.from('trips').select('*, bookings(id,seats,children,status,paid,pay_method,pay_state,created_at,passenger:profiles!bookings_passenger_id_fkey(first_name,avatar_url,created_at))').eq('driver_id', user.id).gte('depart_at', new Date(Date.now()-30*864e5).toISOString()).order('depart_at')
     ]);
     const myB = (bk.data||[]).filter(b=>b.trip);
@@ -457,6 +473,9 @@ async function render(){
       <h3 style="margin-top:18px">🚗 Mon véhicule (conducteurs)</h3>
       <div class="row"><div><label>Modèle</label><input id="pcm" maxlength="40" value="${esc(me?.car_model||'')}" placeholder="ex : Peugeot 308"></div>
       <div><label>Couleur</label><input id="pcc" maxlength="20" value="${esc(me?.car_color||'')}" placeholder="ex : Grise"></div></div>
+      <div class="row" id="pfuel"><div><label>Carburant</label><select id="pft">${Object.entries(FUEL_NAME).map(([k,l])=>`<option value="${k}" ${(me?.fuel_type||'essence')===k?'selected':''}>${l[0].toUpperCase()+l.slice(1)}</option>`).join('')}</select></div>
+      <div><label>Taille</label><select id="pcz">${[['petite','Petite (citadine)'],['moyenne','Moyenne'],['grande','Grande / utilitaire']].map(([k,l])=>`<option value="${k}" ${(me?.car_size||'moyenne')===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+      <div class="hint">Sert à calculer le prix conseillé de vos trajets au plus juste.</div>
       <label>Plaque d'immatriculation</label><input id="pcp" maxlength="12" value="${esc(myPlate||'')}" placeholder="AB-123-CD" autocapitalize="characters">
       <div class="hint">Le modèle et la couleur sont visibles sur tes trajets. La plaque n'est montrée qu'aux passagers que tu as acceptés.</div>
       <button class="btn" onclick="saveName()">Enregistrer</button>
@@ -602,8 +621,8 @@ function openTrip(id){
   sheet(`<h2>${esc(t.from_place)} → ${esc(t.to_place)}</h2><div class="hint">${dayLabel(d)} à ${hm(d)} · ${t.km} km · <b style="color:var(--g)">${seatsText(left,t.seats)}</b></div>
     <div class="card" style="box-shadow:none;border:1px solid var(--b);margin-top:12px"><div class="drv">${av(t.driver?.first_name, t.driver?.avatar_url, 56)}<div><b style="font-size:18px">${esc(t.driver?.first_name)}</b>${stars(t.driver)}${badge(t.driver)}<br><small class="hint" id="dstats">…</small></div></div>
      ${t.driver?.bio?`<div class="hint" style="font-style:italic">« ${esc(t.driver.bio)} »</div>`:''}
-     <div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)}<br>`:''}${tripOpts(t).split(' · ').join('<br>')}${carText(t.driver)?'<br><small>La plaque te sera montrée une fois ta demande acceptée.</small>':''}</div>
-     ${t.meeting_point?`<div class="hint">📍 Rendez-vous : <b>${esc(t.meeting_point)}</b></div>`:''}${t.meet_lat?`<div id="tmap" class="map" style="height:180px"></div>${goLinks(t)}`:''}${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}</div>
+     ${t.driver?.fuel_type==='electrique'?'<div class="hint"><span class="tag t-ok">⚡ Voiture électrique</span> Moins de CO₂ : pas de pollution au pot d\'échappement</div>':''}<div class="hint">${carText(t.driver)?`🚗 ${carText(t.driver)}<br>`:''}${tripOpts(t).split(' · ').join('<br>')}${carText(t.driver)?'<br><small>La plaque te sera montrée une fois ta demande acceptée.</small>':''}</div>
+     ${t.meeting_point?`<div class="hint">📍 Rendez-vous : <b>${esc(t.meeting_point)}</b>${mpTags(t.meeting_point)}${partnerOf(t.meeting_point)?'<br><small>Partenaire Covoit\' Andelys : pendant ses horaires d\'ouverture, tu peux y attendre au chaud en prenant un café ☕</small>':''}</div>`:''}${t.meet_lat?`<div id="tmap" class="map" style="height:180px"></div>`:''}${(t.meet_lat||t.meeting_point)?goLinks(t):''}${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}</div>
     <label>Nombre de places</label><select id="bn">${Array.from({length:left},(_,i)=>`<option>${i+1}</option>`).join('')}</select>
     <label>👶 Dont enfants voyageant avec toi</label><select id="bk"><option value="0">Aucun</option></select>
     <div class="hint" id="bkh" style="display:none">Un enfant voyage toujours <b>accompagné d'un adulte</b>. Pense à apporter le <b>siège auto ou rehausseur</b> adapté (obligatoire pour les moins de 10 ans).</div>
@@ -640,6 +659,21 @@ function delTrip(id, n){ sheet(`<h2>Supprimer ce trajet ?</h2><div class="hint">
   <button class="btn" style="background:#b91c1c" onclick="doDelTrip('${id}',this)">Oui, supprimer</button><button class="btn sec" onclick="closeSheet()">Non, garder</button>`); }
 async function doDelTrip(id,btn){ btn.disabled=true; const {data,error}=await sb.from('trips').delete().eq('id',id).select('id'); if(error){btn.disabled=false;return toast(errMsg(error));}
   closeSheet(); toast(data?.length?'Trajet supprimé':'Impossible : le trajet est déjà parti'); render(); }
+let ESTP='mois';
+function openEstim(){ const p=+$('#op').value||0, s=+$('#os').value;
+  const reg=$('#orc')?.classList.contains('on'), ret=$('#oretc')?.classList.contains('on');
+  const perWeek = reg ? Math.max(1,document.querySelectorAll('.ord.on').length) : 1;
+  const legs = ret ? 2 : 1;
+  const mult = {jour:legs, semaine:perWeek*legs, mois:Math.round(perWeek*legs*52/12), 'année':perWeek*legs*52};
+  const box = () => { const n=mult[ESTP];
+    $('#estb').innerHTML = `<div class="chips">${Object.keys(mult).map(k=>`<button class="chip ${k===ESTP?'on':''}" onclick="ESTP='${k}';openEstim._b()">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>
+      <div class="row" style="margin-top:10px"><div class="note" style="text-align:center">Minimum<br><b style="font-size:26px">${eur(p*n)}</b><br><small>1 passager</small></div>
+      <div class="note" style="text-align:center">Maximum<br><b style="font-size:26px">${eur(p*s*n)}</b><br><small>${s} passager${s>1?'s':''}</small></div></div>
+      <div class="hint">${n} trajet${n>1?'s':''} par ${ESTP} : ${reg?`${perWeek} jour${perWeek>1?'s':''} par semaine`:'1 jour'}${ret?', aller et retour':''}, à ${eur(p)} la place.</div>`; };
+  openEstim._b = box;
+  sheet(`<h2>💶 Ce que vous récupérez</h2><div id="estb"></div>
+    <div class="hint">${reg?'':'💡 Cochez « 🔁 Trajet régulier » pour estimer un trajet fait chaque semaine.<br>'}Estimation si vos places sont réservées, avant les frais de service éventuels du paiement par carte. C'est un partage de frais, pas un revenu.</div>
+    <button class="btn sec" onclick="closeSheet()">Fermer</button>`); box(); }
 async function publish(){
   const a=await resolvePlace($('#of').value), b=await resolvePlace($('#ot').value), s=+$('#os').value, price=Math.max(0,+$('#op').value||0);
   if(!a||!b) return toast('Choisis le départ et l\'arrivée dans les suggestions');
@@ -660,6 +694,7 @@ async function publish(){
   let rets=[]; if($('#oretc')?.classList.contains('on')){ const [rh,rm]=($('#oret').value||'').split(':').map(Number); if(isNaN(rh)) return toast('Indique l\'heure du retour');
     rets=dates.map(d=>{ const r=new Date(d); r.setHours(rh,rm||0,0,0); return r; });
     if(rets.some((r,i)=>r<=dates[i])) return toast('L\'heure du retour doit être après l\'heure de l\'aller'); }
+  if($('#omp').value.trim() && !meetPick) return toast('📍 Place ton point de rendez-vous sur la carte (bouton « Placer sur la carte »)');
   $('#pub').disabled=true;
   const base={from_place:a,to_place:b,seats:s,km:km(a,b),price,
     note:$('#on').value.trim(),women_only:$('#ow').classList.contains('on'),instant:$('#oi').classList.contains('on'),luggage:$('#olg').value,
@@ -702,10 +737,11 @@ async function saveName(){const fn=$('#pfn').value.trim();if(!fn)return;
   const plate=$('#pcp').value.toUpperCase().replace(/[^A-Z0-9 -]/g,'').trim()||null;
   if(plate && !/^[A-Z0-9 -]{4,12}$/.test(plate)) return toast('Plaque invalide (ex : AB-123-CD)');
   const car_model=$('#pcm').value.trim()||null, car_color=$('#pcc').value.trim()||null, bio=$('#pbio').value.trim()||null;
-  const cash=$('#pcash').checked; const {error}=await sb.from('profiles').update({first_name:fn,paypal_me:pp,accepts_cash:cash,car_model,car_color,bio}).eq('id',user.id);
+  const cash=$('#pcash').checked; const fuel_type=$('#pft')?.value||me?.fuel_type||'essence', car_size=$('#pcz')?.value||me?.car_size||'moyenne';
+  const {error}=await sb.from('profiles').update({first_name:fn,paypal_me:pp,accepts_cash:cash,car_model,car_color,bio,fuel_type,car_size}).eq('id',user.id);
   if(error)return toast(errMsg(error));
   const r2=await sb.from('driver_private').upsert({user_id:user.id,car_plate:plate}); if(r2.error)return toast(errMsg(r2.error));
-  Object.assign(me,{first_name:fn,paypal_me:pp,accepts_cash:cash,car_model,car_color,bio});$('#ppp').value=pp||'';$('#pcp').value=plate||'';toast('Profil enregistré');}
+  Object.assign(me,{first_name:fn,paypal_me:pp,accepts_cash:cash,car_model,car_color,bio,fuel_type,car_size});$('#ppp').value=pp||'';$('#pcp').value=plate||'';toast('Profil enregistré');}
 function resizeImage(file, size=320){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');const s=Math.min(img.width,img.height);c.width=c.height=size;
   c.getContext('2d').drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,size,size);c.toBlob(b=>b?res(b):rej(new Error('Image illisible')),'image/jpeg',0.85);URL.revokeObjectURL(img.src);};
   img.onerror=()=>rej(new Error('Image illisible'));img.src=URL.createObjectURL(file);});}
@@ -1047,7 +1083,7 @@ function showFeed(){
   requestAnimationFrame(()=>el.classList.add('on')); clearTimeout(feedTimer); feedTimer=setTimeout(hideFeed, 7000); }
 function hideFeed(){ const el=$('#feedb'); if(el) el.classList.remove('on'); clearTimeout(feedTimer); setTimeout(()=>{ feedBusy=false; showFeed(); }, 600); }
 async function openFeedTrip(id){ if(mode!=='passenger' && typeof setMode==='function') setMode('passenger'); go('search');
-  const {data:t}=await sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at)').eq('id',id).gt('depart_at',new Date().toISOString()).maybeSingle();
+  const {data:t}=await sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type)').eq('id',id).gt('depart_at',new Date().toISOString()).maybeSingle();
   if(!t) return toast('Ce trajet n\'est plus disponible');
   await new Promise(r=>setTimeout(r,600)); if(!tripsCache.find(x=>x.id===id)) tripsCache.push(t); openTrip(id); }
 
@@ -1141,8 +1177,35 @@ async function openHistory(uid,name){
 
 /* ======== Carte des points de rendez-vous (OpenStreetMap) ======== */
 let meetPick=null;
-const gmapsUrl = t => `https://www.google.com/maps/dir/?api=1&destination=${t.meet_lat},${t.meet_lng}`;
-const goLinks = t => `<div class="chips" style="margin-top:8px"><a class="btn small" href="${gmapsUrl(t)}" target="_blank" rel="noopener">🧭 Y aller</a><a class="btn small sec" href="https://waze.com/ul?ll=${t.meet_lat},${t.meet_lng}&navigate=yes" target="_blank" rel="noopener">Waze</a></div>`;
+// 📍 Points de rendez-vous conseillés (🅿️ parking gratuit à la journée · 📍 arrêt minute · 🤝 partenaire)
+const MEETPOINTS = [
+  { name:'Brasserie Le Nicolas Poussin', addr:'26 place Nicolas Poussin', cities:['Les Andelys'], lat:49.2470, lng:1.4205, park:true, partner:true, geo:'26 place Nicolas Poussin 27700 Les Andelys' },
+  { name:'Parking Intermarché Les Andelys', addr:'rue Maréchal Foch', cities:['Les Andelys'], lat:49.248567, lng:1.438245 },
+  { name:'Parking Carrefour Market Les Andelys', addr:'avenue de la République', cities:['Les Andelys'], lat:49.24445, lng:1.40527 },
+  { name:'Aire de covoiturage de Douains', addr:'RD181 Brécourt, sortie A13 Vernon', cities:['Vernon','Gare de Vernon-Giverny','Saint-Marcel','Pacy-sur-Eure'], lat:49.060458, lng:1.421138, park:true },
+  { name:'Gare de Vernon-Giverny', addr:'place de la Gare, Vernon', cities:['Vernon','Gare de Vernon-Giverny','Saint-Marcel'], lat:49.09129, lng:1.47882 },
+  { name:'Parking E.Leclerc Vernon', addr:'boulevard Jean Jaurès', cities:['Vernon','Saint-Marcel'], lat:49.095181, lng:1.462703 },
+  { name:'Gare de Gaillon-Aubevoye', addr:'rue de la Gare, Aubevoye', cities:['Gaillon',"Le Val d'Hazey (Aubevoye)",'Courcelles-sur-Seine'], lat:49.173862, lng:1.353084, park:true },
+  { name:'Aire de covoiturage de Saint-Aubin-sur-Gaillon', addr:'21 rue des Motelles, sortie A13', cities:['Gaillon',"Le Val d'Hazey (Aubevoye)",'Saint-Aubin-sur-Gaillon (aire A13)'], lat:49.139327, lng:1.317403, park:true },
+];
+const meetOf = mp => MEETPOINTS.find(x=>mp && mp.startsWith(x.name));
+const partnerOf = mp => meetOf(mp)?.partner;
+const mpTags = mp => { const x=meetOf(mp); if(!x) return ''; return (x.park?' <span class="tag t-ok">🅿️ Parking gratuit</span>':' <span class="tag" style="background:#f3f4f6;color:#374151">📍 Arrêt minute</span>')+(x.partner?' <span class="tag t-ok">🤝 partenaire</span>':''); };
+async function pickMeet(i){ const x=MEETPOINTS[i]; $('#omp').value=`${x.name} – ${x.addr}`;
+  meetPick={lat:x.lat,lng:x.lng}; meetBtn(); meetChips(); toast(x.park?'🅿️ Point choisi : parking gratuit':'📍 Point choisi : arrêt minute');
+  if(x.geo) try{ const r=await fetch('https://data.geopf.fr/geocodage/search?limit=1&q='+encodeURIComponent(x.geo)); const g=(await r.json())?.features?.[0];
+    if(g && g.properties?.score>0.6){ const [lng,lat]=g.geometry.coordinates; x.lat=+lat.toFixed(6); x.lng=+lng.toFixed(6); delete x.geo; if(meetOf($('#omp').value)===x) meetPick={lat:x.lat,lng:x.lng}; } }catch(e){} }
+function otherMeet(){ if(meetOf($('#omp').value)){ $('#omp').value=''; meetPick=null; meetBtn(); } meetChips(); $('#omp').focus(); }
+function meetChips(){ const el=$('#opart'); if(!el) return; const city=$('#of')?.value||'';
+  const L=MEETPOINTS.map((x,i)=>[x,i]).filter(([x])=>x.cities.includes(city)).sort((a,b)=>(b[0].partner?2:0)+(b[0].park?1:0)-(a[0].partner?2:0)-(a[0].park?1:0)).slice(0,3);
+  const cur=meetOf($('#omp')?.value||''); if(cur && !L.some(([x])=>x===cur)){ $('#omp').value=''; meetPick=null; meetBtn(); }
+  el.innerHTML = L.length ? `<div class="hint" style="margin-top:8px">Points de rendez-vous conseillés :</div><div class="chips">${L.map(([x,i])=>`<button class="chip${meetOf($('#omp').value)===x?' on':''}" type="button" onclick="pickMeet(${i})">${x.park?'🅿️':'📍'} ${esc(x.name)}${x.partner?' 🤝':''}</button>`).join('')}<button class="chip" type="button" onclick="otherMeet()">✏️ Autre lieu</button></div><small class="hint">🅿️ parking gratuit : on peut y laisser sa voiture · 📍 arrêt minute : juste pour monter ou descendre</small>` : ''; }
+const gmapsUrl = t => t.meet_lat ? `https://www.google.com/maps/dir/?api=1&destination=${t.meet_lat},${t.meet_lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(t.meeting_point+', '+t.from_place)}`;
+const wazeUrl = t => t.meet_lat ? `https://waze.com/ul?ll=${t.meet_lat},${t.meet_lng}&navigate=yes` : `https://waze.com/ul?q=${encodeURIComponent(t.meeting_point+' '+t.from_place)}&navigate=yes`;
+const appleUrl = t => t.meet_lat ? `https://maps.apple.com/?daddr=${t.meet_lat},${t.meet_lng}` : `https://maps.apple.com/?daddr=${encodeURIComponent(t.meeting_point+', '+t.from_place)}`;
+const gpsList = t => [ ...(isIOS()?[['Plans',appleUrl(t)]]:[]), ['Google Maps',gmapsUrl(t)], ['Waze',wazeUrl(t)] ];
+const gpsToggle = (el, disp) => { const n=el.nextElementSibling; n.style.display = n.style.display==='none' ? disp : 'none'; };
+const goLinks = t => `<div style="margin-top:8px"><button class="btn small" type="button" onclick="event.stopPropagation();gpsToggle(this,'flex')">🧭 Y aller</button><div class="chips" style="display:none;margin-top:6px">${gpsList(t).map(([n,u])=>`<a class="chip" href="${u}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${n}</a>`).join('')}</div></div>`;
 function loadLeaflet(){ if(window.L) return Promise.resolve();
   return window._lf || (window._lf = new Promise((ok,ko)=>{ const c=document.createElement('link'); c.rel='stylesheet'; c.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(c);
     const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'; s.onload=ok; s.onerror=()=>{ window._lf=null; ko(); }; document.head.appendChild(s); })); }
@@ -1302,7 +1365,7 @@ async function openChat(bid, other){
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
-(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); if(ev==='SIGNED_IN') setTimeout(checkCert, 3000); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadAnnc(); setTimeout(checkCert, 4000); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
+(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); if(ev==='SIGNED_IN') setTimeout(checkCert, 3000); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadFuel(); loadAnnc(); setTimeout(checkCert, 4000); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
 </script>
 </body>
 </html>

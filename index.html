@@ -684,12 +684,12 @@ function openEstim(){ const p=+$('#op').value||0, s=+$('#os').value;
   const mult = {jour:legs, semaine:perWeek*legs, mois:Math.round(perWeek*legs*52/12), 'année':perWeek*legs*52};
   const box = () => { const n=mult[ESTP];
     $('#estb').innerHTML = `<div class="chips">${Object.keys(mult).map(k=>`<button class="chip ${k===ESTP?'on':''}" onclick="ESTP='${k}';openEstim._b()">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>
-      <div class="row" style="margin-top:10px"><div class="note" style="text-align:center">Minimum<br><b style="font-size:26px">${eur(p*n)}</b><br><small>1 passager</small></div>
-      <div class="note" style="text-align:center">Maximum<br><b style="font-size:26px">${eur(p*s*n)}</b><br><small>${s} passager${s>1?'s':''}</small></div></div>
+      <div class="row" style="margin-top:10px"><div class="note" style="text-align:center">Avec 1 passager<br><b style="font-size:26px">${eur(p*n)}</b></div>
+      <div class="note" style="text-align:center">Voiture pleine<br><b style="font-size:26px">${eur(p*s*n)}</b><br><small>${s} passager${s>1?'s':''}</small></div></div>
       <div class="hint">${n} trajet${n>1?'s':''} par ${ESTP} : ${reg?`${perWeek} jour${perWeek>1?'s':''} par semaine`:'1 jour'}${ret?', aller et retour':''}, à ${eur(p)} la place.</div>`; };
   openEstim._b = box;
-  sheet(`<h2>💶 Ce que vous récupérez</h2><div id="estb"></div>
-    <div class="hint">${reg?'':'💡 Cochez « 🔁 Trajet régulier » pour estimer un trajet fait chaque semaine.<br>'}Estimation si vos places sont réservées, avant les frais de service éventuels du paiement par carte. C'est un partage de frais, pas un revenu.</div>
+  sheet(`<h2>💶 Ce que tu récupères</h2><div id="estb"></div>
+    <div class="hint">${reg?'':'💡 Coche « 🔁 Trajet régulier » pour estimer un trajet fait chaque semaine.<br>'}Estimation si tes places sont réservées, avant les frais de service éventuels du paiement par carte. C'est un partage de frais, pas un revenu.</div>
     <button class="btn sec" onclick="closeSheet()">Fermer</button>`); box(); }
 async function publish(){
   const a=await resolvePlace($('#of').value), b=await resolvePlace($('#ot').value), s=+$('#os').value, price=Math.max(0,+$('#op').value||0);

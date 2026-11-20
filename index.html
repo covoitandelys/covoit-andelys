@@ -208,7 +208,7 @@ new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:
 function sheet(html){$('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 function closeSheet(){const wasChat=!!chatTimer;$('#bg').style.display='none';clearInterval(chatTimer);chatTimer=null;if(wasChat&&tab==='mine')render();}
 $('#bg').onclick = e => { if (e.target.id==='bg') closeSheet(); };
-function errMsg(e){const m=(e&&e.message)||'';
+function errMsg(e){const m=((e&&e.message)||'').replace(/(^|\D)([01]) place\(s\) réservée\(s\)/g,'$1$2 place réservée').replace(/(\d+) place\(s\) réservée\(s\)/g,'$1 places réservées').replace(/(^|\D)([01]) place\(s\)/g,'$1$2 place').replace(/(\d+) place\(s\)/g,'$1 places');
  if(m.includes('places_ok'))return 'Plus assez de places sur ce trajet';
  if(m.includes('déjà une demande'))return 'Tu as déjà une demande sur ce trajet';
  if(m.includes('déjà parti'))return 'Ce trajet est déjà parti';
@@ -1399,7 +1399,7 @@ async function openChat(bid, other){
     <div class="row"><input id="mtx" placeholder="Ton message" maxlength="1000"><button class="btn small" style="flex:none" id="msend">Envoyer</button></div>
     <button class="btn sec" onclick="closeSheet()">Fermer</button><button class="link" style="margin-top:6px" onclick="reportUser(null,'${bid}')">🚩 Signaler un problème</button>`);
   let lastMarked='', editId=null, MS=[];
-  const editable = m => m.sender_id===user.id && Date.now()-new Date(m.created_at) < 15*6e4;
+  const editable = m => m.sender_id===user.id && Date.now()-new Date(m.created_at) < 5*6e4;
   window._editMsg = id => { const m=MS.find(x=>x.id===id); if(!m||!editable(m)) return toast('Ce message ne peut plus être modifié'); editId=id; $('#mtx').value=m.body; $('#mtx').focus(); $('#msend').textContent='Modifier'; };
   const load=async()=>{const [{data},{data:readAt}]=await Promise.all([sb.from('messages').select('*').eq('booking_id',bid).order('created_at'), sb.rpc('other_read_at',{b:bid})]);
     const box=$('#msgs'); if(!box)return; const atEnd=box.scrollHeight-box.scrollTop-box.clientHeight<40;

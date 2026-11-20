@@ -410,6 +410,7 @@ async function render(){
       sb.from('bookings').select('*, trip:trips(*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type))').eq('passenger_id', user.id).order('created_at',{ascending:false}),
       sb.from('trips').select('*, bookings(id,seats,children,status,paid,pay_method,pay_state,created_at,passenger:profiles!bookings_passenger_id_fkey(first_name,avatar_url,created_at))').eq('driver_id', user.id).gte('depart_at', new Date(Date.now()-30*864e5).toISOString()).order('depart_at')
     ]);
+    window._myTrips = mt.data||[];
     const myB = (bk.data||[]).filter(b=>b.trip);
     const {data:rv} = await sb.from('reviews').select('booking_id').eq('reviewer_id', user.id); const reviewed=new Set((rv||[]).map(r=>r.booking_id));
     const canRate = (b,t) => b.status==='accepted' && new Date(t.depart_at)<new Date() && !reviewed.has(b.id);
@@ -440,7 +441,7 @@ async function render(){
     const driverHTML = `<h3 style="margin:4px">Mes trajets proposés</h3>` + ((mt.data||[]).length?legend:'') +
       (((mt.data||[]).filter(t=>!isPast(t)).length || !(mt.data||[]).length) ? '' : '<div class="empty">Aucun trajet à venir.<br><br><button class="btn sec" onclick="go(\'offer\')">Proposer un trajet</button></div>') +
       [(mt.data||[]).filter(t=>!isPast(t)), (mt.data||[]).filter(t=>isPast(t)).reverse()].map((lst,ip)=>{ const h=byDay(lst, t=>t.depart_at, t => { const acc=t.bookings.filter(b=>b.status==='accepted'), accS=acc.reduce((n,b)=>n+b.seats,0);
-        return grp(ip?C.off:t.bookings.some(b=>b.status==='pending')?C.wait:acc.length?C.ok:C.none, tripCard({...t, driver:me}, ip?'<span class="tag">✔️ Passé</span>':`<button class="btn small sec" onclick="delTrip('${t.id}',${t.bookings.filter(b=>b.status!=='refused').length})">Supprimer</button>`) +
+        return grp(ip?C.off:t.bookings.some(b=>b.status==='pending')?C.wait:acc.length?C.ok:C.none, tripCard({...t, driver:me}, ip?'<span class="tag">✔️ Passé</span>':`<button class="btn small sec" onclick="editTrip('${t.id}')">Modifier</button> <button class="btn small sec" onclick="delTrip('${t.id}',${t.bookings.filter(b=>b.status!=='refused').length})">Supprimer</button>`) +
         (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${nPl(b.seats)}${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}${b.passenger?.created_at?`<br><small style="color:var(--m)">${sinceText(b.passenger.created_at)}</small>`:''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Encaissé</span>':b.pay_state==='held'?' <span class="tag t-ok">💳 Paiement garanti</span>':b.pay_state==='problem'?' <span class="tag">⏸️ Paiement en attente</span>':b.status==='accepted'&&b.pay_method?` <span class="tag">${b.pay_method==='cash'?'💶 Paiera en espèces':b.pay_method==='paypal'?'🅿️ Paiera par PayPal':'💳 Paiera par carte'}</span>`:''}${canRate(b,t)?` <button class="btn small" onclick="openReview('${b.id}','${jsq(b.passenger?.first_name||'')}')">⭐ Noter</button>`:''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${jsq(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}${accS?`<div class="hint" style="margin-top:6px">💶 ${ip?'Tu as récupéré':'Tu récupères'} <b>${eur(t.price*accS)}</b> (${nPl(accS)} confirmée${accS>1?'s':''})</div>`:''}</div>` : '')); }
       ); return ip?pastBox(h,lst.length):h; }).join('') + ((mt.data||[]).length ? '' : `<div class="empty">Aucun trajet proposé.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`);
     v.innerHTML = mode==='driver' ? driverHTML : passengerHTML;
@@ -676,6 +677,37 @@ function delTrip(id, n){ sheet(`<h2>Supprimer ce trajet ?</h2><div class="hint">
   <button class="btn" style="background:#b91c1c" onclick="doDelTrip('${id}',this)">Oui, supprimer</button><button class="btn sec" onclick="closeSheet()">Non, garder</button>`); }
 async function doDelTrip(id,btn){ btn.disabled=true; const {data,error}=await sb.from('trips').delete().eq('id',id).select('id'); if(error){btn.disabled=false;return toast(errMsg(error));}
   closeSheet(); toast(data?.length?'Trajet supprimé':'Impossible : le trajet est déjà parti'); render(); }
+function editTrip(id){ const t=(window._myTrips||[]).find(x=>x.id===id); if(!t) return;
+  const d=new Date(t.depart_at), p2=n=>String(n).padStart(2,'0');
+  const dS=`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`, hS=`${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  const act=t.bookings.filter(b=>b.status!=='refused'), card=act.some(b=>b.paid||['held','captured','problem'].includes(b.pay_state));
+  const mps=MEETPOINTS.filter(x=>x.cities.includes(t.from_place));
+  const tg=(id,on,l)=>`<button type="button" class="chip ${on?'on':''}" id="${id}" onclick="this.classList.toggle('on')">${l}</button>`;
+  window._ed={t, mp:t.meeting_point||'', lat:t.meet_lat, lng:t.meet_lng};
+  sheet(`<h2>✏️ Modifier le trajet</h2><div class="hint">${esc(t.from_place)} → ${esc(t.to_place)} · le départ et l'arrivée ne se modifient pas (supprime et republie si besoin).</div>
+    ${act.length?`<div class="note">👥 ${act.length} passager${act.length>1?'s ont':' a'} déjà réservé : ${card?'un paiement par carte est en cours, le <b>prix est bloqué</b>.':'le prix peut seulement <b>baisser</b>.'} Ils seront prévenus si l'heure, le prix ou le point de rendez-vous changent.</div>`:''}
+    <div class="row"><div><label>Date</label><input type="date" id="ed_d" value="${dS}"></div><div><label>Heure</label><input type="time" id="ed_h" value="${hS}"></div></div>
+    <div class="row"><div><label>Places</label><select id="ed_s">${[1,2,3,4].filter(n=>n>=t.booked).map(n=>`<option ${n===t.seats?'selected':''}>${n}</option>`).join('')}</select></div>
+      <div><label>Prix / place (€)</label><input type="number" id="ed_p" step="0.5" min="0" value="${t.price}" ${card?'disabled':''}></div></div>
+    <label>Point de rendez-vous</label>
+    ${mps.length?`<div class="chips" id="ed_mpc">${mps.map((x,i)=>`<button type="button" class="chip ${t.meeting_point&&t.meeting_point.startsWith(x.name)?'on':''}" onclick="_edMp(${MEETPOINTS.indexOf(x)},this)">${esc(x.name)}</button>`).join('')}</div>`:''}
+    <input id="ed_mp" maxlength="120" value="${esc(t.meeting_point||'')}" placeholder="Ex : parking de la gare" oninput="_ed.lat=null;_ed.lng=null;document.querySelectorAll('#ed_mpc .chip').forEach(c=>c.classList.remove('on'))">
+    <label>Message (facultatif)</label><input id="ed_n" maxlength="200" value="${esc(t.note||'')}">
+    <label>Bagages</label><select id="ed_lg">${[['none','🚫 Pas de bagage'],['small','🎒 Petit bagage (sac, cabas)'],['large','🧳 Valise acceptée']].map(([v,l])=>`<option value="${v}" ${(t.luggage||'small')===v?'selected':''}>${l}</option>`).join('')}</select>
+    <div class="chips" style="margin-top:8px">${tg('ed_w',t.women_only,'♀ Réservé aux femmes')}${tg('ed_i',t.instant,'⚡ Réservation instantanée')}${tg('ed_pt',t.pets,'🐾 Animaux acceptés')}${tg('ed_m2',t.max2_back,'💺 Max 2 à l\'arrière')}</div>
+    <button class="btn" style="margin-top:12px" onclick="saveTrip(this)">Enregistrer</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`); }
+function _edMp(i,el){ const x=MEETPOINTS[i]; $('#ed_mp').value=x.name; _ed.lat=x.lat; _ed.lng=x.lng; document.querySelectorAll('#ed_mpc .chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); }
+async function saveTrip(btn){ const t=_ed.t, dep=new Date(`${$('#ed_d').value}T${$('#ed_h').value}`), s=+$('#ed_s').value, price=Math.max(0,+$('#ed_p').value||0);
+  if(isNaN(dep)) return toast('Date ou heure invalide'); if(dep<=new Date()) return toast('L\'heure de départ est déjà passée');
+  if(price>maxPrice(t.from_place,t.to_place,s)) return toast('Maximum légal : '+eur(maxPrice(t.from_place,t.to_place,s))+' par passager');
+  if(price<minPrice(t.from_place,t.to_place,s)) return toast('Prix minimum : '+eur(minPrice(t.from_place,t.to_place,s))+' par passager');
+  const mp=$('#ed_mp').value.trim(); const same=mp===(t.meeting_point||'');
+  btn.disabled=true;
+  const {error}=await sb.rpc('update_trip',{t:t.id,p_depart:dep.toISOString(),p_seats:s,p_price:price,p_note:$('#ed_n').value.trim(),p_meeting:mp,
+    p_lat:mp?(same?t.meet_lat:_ed.lat):null,p_lng:mp?(same?t.meet_lng:_ed.lng):null,p_women:$('#ed_w').classList.contains('on'),p_instant:$('#ed_i').classList.contains('on'),
+    p_luggage:$('#ed_lg').value,p_pets:$('#ed_pt').classList.contains('on'),p_max2:$('#ed_m2').classList.contains('on')});
+  if(error){ btn.disabled=false; return toast(errMsg(error)); }
+  closeSheet(); toast('Trajet modifié ✏️'); render(); }
 let ESTP='mois';
 function openEstim(){ const p=+$('#op').value||0, s=+$('#os').value;
   const reg=$('#orc')?.classList.contains('on'), ret=$('#oretc')?.classList.contains('on');

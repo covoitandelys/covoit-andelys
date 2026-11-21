@@ -397,7 +397,7 @@ async function render(){
       $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · minimum <b>${eur(minPrice(a,b,s))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>${(v=>`⛽ ${km(a,b)} km × ${String(v.c).replace('.',',')} ${v.unit}/100 × ${eur(v.price)}/${v.unit} = ${eur(fuelCost(a,b))} ÷ 2 (vous + 1 passager)<br>${v.unit==='kWh'?'🔌 électrique : recharge estimée à domicile':FUELP?`prix moyen ${v.f==='gpl'?'du GPL':v.f==='diesel'?'du diesel':'de l\'essence'} dans l'Eure au ${new Date(FUELP.updated_at).toLocaleDateString('fr-FR')}`:'prix moyen estimé'} · ${v.micro?'voiturette':FUEL_NAME[v.f]+', voiture '+(me?.car_size||'moyenne')} <button class="link" style="font-size:inherit" onclick="go('profile');setTimeout(()=>$('#pfuel')?.scrollIntoView({block:'center'}),500)">modifier</button>`)(vehicle())}</small><div id="oest"></div>${dm?`<br><b style="color:var(--g)">🙋 ${dm} passager${dm>1?'s':''} ${dm>1?'cherchent':'cherche'} ce trajet : ${dm>1?'ils seront prévenus':'il sera prévenu'} si l'horaire correspond !</b>`:''}`; };
     const est = () => { const el=$('#oest'); if(!el) return; const p=+$('#op').value||0, s=+$('#os').value; if(!p||!$('#oh2 b')){ el.innerHTML=''; return; }
       el.innerHTML=`<div class="hint" style="margin-top:6px">💶 Tu récupères de <b>${eur(p)}</b> (1 passager) à <b>${eur(p*s)}</b> (${s} passager${s>1?'s':''}) par trajet · <button class="link" style="font-size:inherit" onclick="openEstim()">Voir l'estimation ›</button></div>`; };
-    const upd2 = () => { upd(); est(); meetChips(); };
+    const upd2 = () => { if(!$('#of')) return; upd(); est(); meetChips(); };
     wirePlace('of',upd2); wirePlace('ot',upd2); $('#os').onchange=upd2; $('#op').oninput=est; upd2(); loadDemand().then(upd2);
     document.querySelectorAll('#orc,#oretc,.ord').forEach(x=>x.addEventListener('click',()=>setTimeout(est,0))); $('#orw').onchange=est;
   }
@@ -1000,13 +1000,23 @@ async function pushState(){
 async function enablePush(){
   try{
     const perm = await Notification.requestPermission(); if(perm!=='granted') return toast('Notifications refusées');
+    try{ localStorage.removeItem('covoit_push_off'); }catch(_){}
     const reg = swReg || await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64ToU8(VAPID_PUBLIC)});
     const j = sub.toJSON(); const {error}=await sb.rpc('save_push_sub',{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
     if(error) throw error; toast('Notifications activées 🔔'); pushState();
   }catch(e){ toast('Impossible d\'activer : '+(e.message||e)); }
 }
-async function disablePush(){ const reg=swReg||await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription();
+// À chaque ouverture : renvoie l'abonnement actuel au serveur (il peut changer après une mise à jour du téléphone ou de Chrome)
+async function syncPush(){ try{
+  if(!user || !('serviceWorker' in navigator) || !('PushManager' in window) || Notification.permission!=='granted') return;
+  try{ if(localStorage.getItem('covoit_push_off')==='1') return; }catch(_){}
+  const reg = swReg || await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if(!sub) sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64ToU8(VAPID_PUBLIC)});
+  const j = sub.toJSON(); await sb.rpc('save_push_sub',{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
+}catch(_){} }
+async function disablePush(){ try{ localStorage.setItem('covoit_push_off','1'); }catch(_){} const reg=swReg||await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription();
   if(sub){ await sb.rpc('remove_push_sub',{p_endpoint:sub.endpoint}); await sub.unsubscribe(); } toast('Notifications désactivées'); render(); }
 async function installApp(){
   if(installEvt){ installEvt.prompt(); const r=await installEvt.userChoice; installEvt=null; if(r.outcome==='accepted') toast('Appli installée 📲'); return; }
@@ -1239,7 +1249,7 @@ const MEETPOINTS = [
 ];
 const meetOf = mp => MEETPOINTS.find(x=>mp && mp.startsWith(x.name));
 const partnerOf = mp => meetOf(mp)?.partner;
-const mpTags = mp => { const x=meetOf(mp); if(!x) return ''; return (x.park?' <span class="tag t-ok">🅿️ Parking gratuit</span>':' <span class="tag" style="background:#f3f4f6;color:#374151">📍 Arrêt minute</span>')+(x.partner?' <span class="tag t-ok">🤝 partenaire</span>':''); };
+const mpTags = mp => { const x=meetOf(mp); if(!x) return ''; if(x.partner) return ' <span class="tag t-ok">🤝 Partenaire · places à proximité</span>'; return (x.park?' <span class="tag t-ok">🅿️ Parking gratuit</span>':' <span class="tag" style="background:#f3f4f6;color:#374151">📍 Arrêt minute</span>')+(x.partner?' <span class="tag t-ok">🤝 partenaire</span>':''); };
 async function pickMeet(i){ const x=MEETPOINTS[i]; $('#omp').value=`${x.name} – ${x.addr}`;
   meetPick={lat:x.lat,lng:x.lng}; meetBtn(); meetChips(); toast(x.park?'🅿️ Point choisi : parking gratuit':'📍 Point choisi : arrêt minute');
   if(x.geo) try{ const r=await fetch('https://data.geopf.fr/geocodage/search?limit=1&q='+encodeURIComponent(x.geo)); const g=(await r.json())?.features?.[0];
@@ -1417,7 +1427,7 @@ async function openChat(bid, other){
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
-(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); if(ev==='SIGNED_IN') setTimeout(checkCert, 3000); } }); await handleReturn(); refreshNotif(); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadFuel(); loadAnnc(); setTimeout(checkCert, 4000); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
+(async()=>{ if(configured){ await loadMe(); sb.auth.onAuthStateChange(async(ev)=>{ if(ev==='PASSWORD_RECOVERY'){ await loadMe(); setTimeout(newPwSheet,300); } if(ev==='SIGNED_IN'||ev==='SIGNED_OUT'){ await loadMe(); refreshNotif(); if(ev==='SIGNED_IN'){ setTimeout(checkCert, 3000); setTimeout(syncPush, 2000); } } }); await handleReturn(); refreshNotif(); setTimeout(syncPush, 2000); setInterval(()=>{ if(!document.hidden) refreshNotif(); },20000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNotif(); }); } render(); maybeWelcome(); if(configured){ loadFuel(); loadAnnc(); setTimeout(checkCert, 4000); setTimeout(loadFeed, 2500); setInterval(loadFeed, 60000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadFeed(); }); } })();
 </script>
 </body>
 </html>

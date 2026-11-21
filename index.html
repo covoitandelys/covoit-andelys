@@ -463,11 +463,16 @@ async function render(){
         $('#ago').textContent=login?'Se connecter':'Créer mon compte';$('#afg').style.display=login?'block':'none';$('#asw').textContent=login?'Créer un compte':"J'ai déjà un compte";
         $('#tsu').classList.toggle('on',!login); $('#tli').classList.toggle('on',login); $('#apw').autocomplete=login?'current-password':'new-password';};
       $('#tsu').onclick=()=>{ if(login) $('#asw').onclick(); }; $('#tli').onclick=()=>{ if(!login) $('#asw').onclick(); };
-      $('#ago').onclick=async()=>{const email=$('#aem').value.trim(),password=$('#apw').value,fn=$('#afn').value.trim();
-        if(!login&&!fn)return toast('Indique ton prénom');if(!login&&!$('#acgu').checked)return toast('Accepte les CGU pour créer ton compte');$('#ago').disabled=true;
+      $('#ago').onclick=async()=>{const email=$('#aem').value.trim().toLowerCase(),password=$('#apw').value,fn=$('#afn').value.trim();
+        if(!login&&!fn)return toast('Indique ton prénom');if(!login&&!$('#acgu').checked)return toast('Accepte les CGU pour créer ton compte');
+        if(!login){ if(!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(email)) return toast('Adresse e-mail invalide');
+          const fix=mailFix(email); if(fix && !$('#ago').dataset.ok){ return sheet(`<h2>📧 Vérifie ton adresse</h2><p>Tu as écrit <b>${esc(email)}</b>.<br>Voulais-tu dire <b>${esc(fix)}</b> ?</p><div class="hint">Une adresse fausse = tu ne reçois ni le mail de confirmation, ni les alertes de trajets.</div>
+            <button class="btn" onclick="$('#aem').value='${jsq(fix)}';closeSheet();$('#ago').click()">Oui, corriger en ${esc(fix)}</button><button class="btn sec" onclick="$('#ago').dataset.ok='1';closeSheet();$('#ago').click()">Non, mon adresse est correcte</button>`); } }
+        $('#ago').disabled=true;
         const r = login ? await sb.auth.signInWithPassword({email,password}) : await sb.auth.signUp({email,password,options:{data:{first_name:fn,cgu_accepted_at:new Date().toISOString(),cgu_version:LEGAL_UPDATED}}});
-        $('#ago').disabled=false; if(r.error)return toast(errMsg(r.error));
-        if(!r.data.session){toast('Vérifie ta boîte mail pour confirmer ton compte');return;}
+        $('#ago').disabled=false; delete $('#ago').dataset.ok;
+        if(r.error){ if(login && /not confirmed/i.test(r.error.message||'')) return checkMailSheet(email, true); return toast(errMsg(r.error)); }
+        if(!r.data.session){ checkMailSheet(email); return; }
         await loadMe(); toast(login?'Connecté ✅':'Bienvenue '+fn+' 🎉'); render(); maybeWelcome();};
       return;
     }
@@ -708,6 +713,20 @@ async function saveTrip(btn){ const t=_ed.t, dep=new Date(`${$('#ed_d').value}T$
     p_luggage:$('#ed_lg').value,p_pets:$('#ed_pt').classList.contains('on'),p_max2:$('#ed_m2').classList.contains('on')});
   if(error){ btn.disabled=false; return toast(errMsg(error)); }
   closeSheet(); toast('Trajet modifié ✏️'); render(); }
+// Fautes de frappe courantes dans les adresses e-mail
+function mailFix(email){ const at=email.lastIndexOf('@'); if(at<1) return null; const u=email.slice(0,at), d=email.slice(at+1);
+  const MAP={'gmail.fr':'gmail.com','gmail.con':'gmail.com','gmail.co':'gmail.com','gmail.cm':'gmail.com','gmail.om':'gmail.com','gmial.com':'gmail.com','gmal.com':'gmail.com','gmai.com':'gmail.com','gamil.com':'gmail.com','gnail.com':'gmail.com','gmaill.com':'gmail.com','gmail.comm':'gmail.com','gmail.cpm':'gmail.com','gmail.vom':'gmail.com',
+    'hotmail.con':'hotmail.com','hotmial.com':'hotmail.com','hotmal.com':'hotmail.com','hotmai.com':'hotmail.com','hotmail.co':'hotmail.com','hotmil.com':'hotmail.com','hotmail.ft':'hotmail.fr','hotmail.fe':'hotmail.fr','hotmial.fr':'hotmail.fr','hotmal.fr':'hotmail.fr',
+    'outlook.con':'outlook.com','outlok.com':'outlook.com','outlook.co':'outlook.com','outlok.fr':'outlook.fr','yahoo.con':'yahoo.com','yaho.fr':'yahoo.fr','yahou.fr':'yahoo.fr','yahoo.ft':'yahoo.fr','orange.com':'orange.fr','orage.fr':'orange.fr','oange.fr':'orange.fr','orange.ft':'orange.fr','free.com':'free.fr','sfr.com':'sfr.fr','laposte.com':'laposte.net','laposte.fr':'laposte.net','live.con':'live.com','icloud.fr':'icloud.com','icloud.con':'icloud.com','wanadoo.com':'wanadoo.fr'};
+  return MAP[d] ? u+'@'+MAP[d] : null; }
+function checkMailSheet(email, fromLogin){
+  sheet(`<h2>📧 Vérifie ta boîte mail</h2>${fromLogin?'<p>Ton adresse n\'est pas encore confirmée.</p>':''}<p>Nous avons envoyé un lien de confirmation à<br><b>${esc(email)}</b></p>
+    <div class="note">👉 Ouvre le mail <b>« Confirme ton inscription sur Covoit' Andelys »</b> et appuie sur <b>Confirmer mon adresse</b>.<br>📂 Pas reçu ? Regarde dans tes <b>spams / courrier indésirable</b> (ça peut prendre 2-3 minutes).</div>
+    <button class="btn" id="rsnd" onclick="resendConfirm('${jsq(email)}',this)">Renvoyer le mail</button><button class="btn sec" onclick="closeSheet()">OK</button>
+    <div class="hint">Adresse incorrecte ? Ferme cette fenêtre et recrée ton compte avec la bonne adresse.</div>`); }
+async function resendConfirm(email, btn){ btn.disabled=true; const {error}=await sb.auth.resend({type:'signup', email});
+  if(error){ btn.disabled=false; return toast(/rate|seconds/i.test(error.message||'')?'Patiente une minute avant de renvoyer le mail':errMsg(error)); }
+  toast('Mail renvoyé ✅'); let n=60; btn.textContent=`Renvoyer (${n}s)`; const t=setInterval(()=>{ n--; if(n<=0){ clearInterval(t); btn.disabled=false; btn.textContent='Renvoyer le mail'; } else btn.textContent=`Renvoyer (${n}s)`; },1000); }
 let ESTP='mois';
 function openEstim(){ const p=+$('#op').value||0, s=+$('#os').value;
   const reg=$('#orc')?.classList.contains('on'), ret=$('#oretc')?.classList.contains('on');

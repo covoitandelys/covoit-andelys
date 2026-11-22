@@ -835,6 +835,7 @@ async function uploadAvatar(file){ try{ toast('Envoi de la photo…'); const blo
 async function removeAvatar(){ await sb.storage.from('avatars').remove([`${user.id}/avatar.jpg`]); await sb.from('profiles').update({avatar_url:null}).eq('id',user.id); me.avatar_url=null; toast('Photo retirée'); render(); }
 const fdate = d => d ? new Date(d+(String(d).length===10?'T12:00':'')).toLocaleDateString('fr-FR') : '';
 const daysTo = d => d ? Math.ceil((new Date(d+'T23:59')-Date.now())/864e5) : 1e9;
+const VKEYS=['id','permis','assurance'], VLAB={id:'Identité',permis:'Permis',assurance:'Assurance'};
 const VDOCS = [['id','🪪 Pièce d\'identité (recto)'],['permis','🚗 Permis de conduire'],['assurance','📄 Attestation d\'assurance du véhicule']];
 async function loadVerifCard(){
   const box=$('#vcard'); if(!box) return;
@@ -847,6 +848,10 @@ async function loadVerifCard(){
   else if(renew) body=`${req?.status==='refused'?`<div class="note warn">❌ Attestation refusée${req.reason?` : <b>${esc(req.reason)}</b>`:''}. Tu peux en renvoyer une.</div>`:''}<div class="note ${me.verified?'':'warn'}">${me.verified?`⌛ Ton badge expire le <b>${fdate(me.verified_until)}</b>.`:`⌛ Ton badge a expiré le <b>${fdate(me.verified_until)}</b>.`} Pour le renouveler, envoie simplement ta <b>nouvelle attestation d'assurance</b>.</div>
     <label style="color:var(--t)">📄 Nouvelle attestation d'assurance</label><input type="file" id="vd-renew" accept="image/*">
     <div class="hint">🔒 Supprimée dès l'examen terminé.</div><button class="btn" id="vsend" onclick="submitVerif(true)">Envoyer mon attestation</button>`;
+  else if(req?.status==='refused' && req.redo?.length) body=`<div class="note warn">❌ Il manque seulement : <b>${VDOCS.filter(([k])=>req.redo.includes(k)).map(([,l])=>l).join(' et ')}</b>${req.reason?` (${esc(req.reason)})`:''}.<br>👍 Tes autres documents sont bons et gardés : renvoie uniquement ${req.redo.length>1?'ceux-ci':'celui-ci'}.</div>
+    ${VDOCS.filter(([k])=>req.redo.includes(k)).map(([k,l])=>`<label style="color:var(--t)">${l}</label><input type="file" id="vd-${k}" accept="image/*">`).join('')}
+    <div class="hint">🔒 Stocké dans un espace privé, supprimé dès l'examen terminé.</div>
+    <button class="btn" id="vsend" onclick="submitVerif(false,${esc(JSON.stringify(req.redo))})">Envoyer ${req.redo.length>1?'ces documents':'ce document'}</button>`;
   else body=`${stripeLine}${req?.status==='refused'?`<div class="note warn">❌ Demande refusée${req.reason?` : <b>${esc(req.reason)}</b>`:''}. Tu peux renvoyer tes documents.</div>`:''}
     <div class="hint">Le badge <b>✓ Vérifié</b> rassure les passagers. Envoie une photo nette de ces 3 documents :</div>
     ${VDOCS.map(([k,l])=>`<label style="color:var(--t)">${l}</label><input type="file" id="vd-${k}" accept="image/*">`).join('')}
@@ -857,39 +862,42 @@ async function loadVerifCard(){
 function resizeMax(file, max=1600){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;const r=Math.min(1,max/Math.max(w,h));w=Math.round(w*r);h=Math.round(h*r);
   const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);c.toBlob(b=>b?res(b):rej(new Error('Image illisible')),'image/jpeg',0.85);URL.revokeObjectURL(img.src);};
   img.onerror=()=>rej(new Error('Image illisible'));img.src=URL.createObjectURL(file);});}
-async function submitVerif(renew){
-  const docs=renew?[['renew']]:VDOCS;
-  const files=docs.map(([k])=>$('#vd-'+k).files[0]); if(files.some(f=>!f)) return toast(renew?'Ajoute ton attestation d\'assurance':'Ajoute les 3 documents');
+async function submitVerif(renew, redo){
+  const docs=renew?[['renew']]:redo?VDOCS.filter(([k])=>redo.includes(k)):VDOCS;
+  const files=docs.map(([k])=>$('#vd-'+k).files[0]); if(files.some(f=>!f)) return toast(renew?'Ajoute ton attestation d\'assurance':redo?'Ajoute le document demandé':'Ajoute les 3 documents');
   const btn=$('#vsend'); btn.disabled=true; btn.textContent='Envoi en cours…';
   try{ const ts=Date.now(), paths=[];
-    for(let i=0;i<files.length;i++){ const blob=await resizeMax(files[i]); const path=`${user.id}/${renew?'assurance':VDOCS[i][0]}-${ts}.jpg`;
+    for(let i=0;i<files.length;i++){ const blob=await resizeMax(files[i]); const path=`${user.id}/${renew?'assurance':docs[i][0]}-${ts}.jpg`;
       const up=await sb.storage.from('verif-docs').upload(path,blob,{contentType:'image/jpeg'}); if(up.error) throw up.error; paths.push(path); }
     const {error}=await sb.rpc('submit_verification',{paths}); if(error) throw error;
     toast('Demande envoyée ✅ La réponse s\'affichera dans ton profil'); loadVerifCard();
-  }catch(e){ btn.disabled=false; btn.textContent=renew?'Envoyer mon attestation':'Envoyer ma demande'; toast(errMsg(e)); }
+  }catch(e){ btn.disabled=false; btn.textContent=renew?'Envoyer mon attestation':redo?'Envoyer':'Envoyer ma demande'; toast(errMsg(e)); }
 }
 async function loadVerifQueue(){
   const box=$('#vqueue'); if(!box) return;
+  sb.rpc('admin_stale_kept').then(({data:old})=>{ if(old?.length) sb.storage.from('verif-docs').remove(old); });
   const {data,error}=await sb.rpc('admin_list_verifs'); if(error){ box.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   if(!data?.length){ box.innerHTML='<div class="hint">Aucune demande en attente ✅</div>'; return; }
   const urls={}; const all=data.flatMap(r=>r.files||[]);
   if(all.length){ const {data:su}=await sb.storage.from('verif-docs').createSignedUrls(all,600); (su||[]).forEach(x=>urls[x.path]=x.signedUrl); }
   box.innerHTML=`<div class="hint"><b>${data.length} demande${data.length>1?'s':''} en attente</b></div>`+data.map(r=>`<div class="card" style="box-shadow:none;border:1px solid var(--b)">
     <b>${esc(r.first_name||'—')}</b>${r.kind==='renew'?` <span class="tag" style="background:#fef3c7;color:#92400e">🔄 Renouvellement${r.verified_until?' · badge au '+fdate(r.verified_until):''}</span>`:''}${r.stripe_ready?' <span class="tag" style="background:#e0e7ff;color:#3730a3">🪪 Stripe</span>':''}<br><small style="color:var(--m)">${esc(r.email||'')} · ${new Date(r.requested).toLocaleDateString('fr-FR')}</small>
-    <div style="display:flex;gap:6px;margin-top:8px">${(r.files||[]).map((f,i)=>`<a href="${esc(urls[f]||'#')}" target="_blank" rel="noopener" style="flex:1;text-align:center;font-size:11px;color:var(--m)"><img src="${esc(urls[f]||'')}" style="width:100%;height:70px;object-fit:cover;border-radius:8px;background:#eee"><br>${r.kind==='renew'?'Assurance':(['Identité','Permis','Assurance'][i]||'')}</a>`).join('')}</div>
+    <div style="display:flex;gap:6px;margin-top:8px">${(r.files||[]).map(f=>[f,(f.match(/\/([a-z]+)-\d+\.jpg$/)||[])[1]]).sort((a,b)=>VKEYS.indexOf(a[1])-VKEYS.indexOf(b[1])).map(([f,k])=>`<div style="flex:1;text-align:center;font-size:11px;color:var(--m)"><a href="${esc(urls[f]||'#')}" target="_blank" rel="noopener"><img src="${esc(urls[f]||'')}" style="width:100%;height:70px;object-fit:cover;border-radius:8px;background:#eee"></a><br>${r.kind==='renew'?'Assurance':(VLAB[k]||'')}${r.kind==='renew'?'':`<label style="display:flex;gap:4px;justify-content:center;align-items:center;font-size:11px;margin-top:4px;color:#b91c1c"><input type="checkbox" class="vredo-${r.uid}" value="${k}" style="width:16px;height:16px">à refaire</label>`}</div>`).join('')}</div>
     <label style="color:var(--t)">📅 Assurance valable jusqu'au (lue sur l'attestation)</label><input type="date" id="vu-${r.uid}" min="${today()}">
-    <input id="vr-${r.uid}" placeholder="Motif si refus (ex : attestation illisible)" style="margin-top:8px">
+    <input id="vr-${r.uid}" placeholder="Motif si refus (ex : attestation illisible)" style="margin-top:8px">${r.kind==='renew'?'':'<div class="hint">Un seul document pas bon ? Coche « à refaire » dessous, puis ✗ Refuser : le membre ne renverra que celui-là.</div>'}
     <div class="row" style="margin-top:8px"><button class="btn small" onclick="reviewVerif('${r.uid}',true,this)">✓ Valider</button><button class="btn small sec" onclick="reviewVerif('${r.uid}',false,this)">✗ Refuser</button></div></div>`).join('')
     +'<div class="hint">Touche une photo pour l\'agrandir. Les documents sont supprimés dès ta réponse.</div>';
 }
 async function reviewVerif(uid,ok,btn){
   const why=($('#vr-'+uid)?.value||'').trim(); if(!ok && !why) return toast('Indique le motif du refus');
   const until=$('#vu-'+uid)?.value||null; if(ok && !until) return toast('Indique la date de fin de l\'assurance');
-  btn.disabled=true; const {data:files,error}=await sb.rpc('admin_review_verif',{target:uid,accept:ok,why,until});
+  const redo=ok?[]:[...document.querySelectorAll('.vredo-'+uid+':checked')].map(c=>c.value);
+  if(redo.length===3) return toast('Les 3 documents sont à refaire : décoche les cases, c\'est un refus complet');
+  btn.disabled=true; const {data:files,error}=await sb.rpc('admin_review_verif',{target:uid,accept:ok,why,until,redo_docs:redo});
   if(error){ btn.disabled=false; return toast(errMsg(error)); }
   if(files?.length) await sb.storage.from('verif-docs').remove(files);
   const u=(openAdmin._data||[]).find(x=>x.uid===uid); if(ok){ if(u){u.verified=true;u.verified_until=until;} if(uid===user.id){me.verified=true;me.verified_until=until;} }
-  toast(ok?'Membre vérifié ✅ Documents supprimés':'Demande refusée, documents supprimés'); loadVerifQueue(); $('#aq')?.oninput?.();
+  toast(ok?'Membre vérifié ✅ Documents supprimés':redo.length?'Document à refaire demandé ✅ Les autres sont gardés':'Demande refusée, documents supprimés'); loadVerifQueue(); $('#aq')?.oninput?.();
 }
 async function openAdmin(){
   sheet('<h2>🛠️ Administration</h2><div class="chips" style="margin-bottom:8px">'+[['astats','📈 Statistiques'],['alist','👥 Membres'],['apay','💳 Paiements'],['atrips','🚗 Trajets'],['adem','🔔 Alertes & demandes'],['rqueue','🚩 Signalements'],['vqueue','✓ Badges'],['amail','📧 Mails'],['aann','📢 Annonces'],['aarch','🗄️ Supprimés']].map(([id,l])=>`<button class="chip" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})">${l}</button>`).join('')+'</div><h3>📈 Statistiques</h3><div id="astats"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">💳 Paiements par carte en cours</h3><div id="apay"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🚗 Trajets à venir</h3><div id="atrips"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🔔 Alertes et demandes</h3><div id="adem"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📢 Annonces dans l’appli</h3><div id="aann"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">👥 Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div class="chips" id="afil" style="margin-top:8px"></div><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');

@@ -40,6 +40,7 @@ select,input,textarea{width:100%;padding:12px;border:1px solid var(--b);border-r
 nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid var(--b);display:flex;padding:6px 0 calc(10px + env(safe-area-inset-bottom))}
 nav button{flex:1;background:none;border:0;font:inherit;font-size:12px;font-weight:700;color:var(--m);cursor:pointer;padding:6px 0}
 nav button span{display:block;font-size:22px}nav button.on{color:var(--g)}
+.adm{position:fixed;inset:0;background:var(--bg);z-index:9;display:none;flex-direction:column}.adm[style*="block"]{display:flex!important}.admh{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--g);color:#fff;font-size:18px}.admt{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:#fff;border-bottom:1px solid var(--b);flex:none}.admt button{flex:none;border:1px solid var(--b);background:#fff;border-radius:20px;padding:7px 12px;font-weight:700;font-size:14px;color:var(--t);position:relative}.admt button.on{background:var(--g);color:#fff;border-color:var(--g)}.admn{display:none;margin-left:6px;background:#dc2626;color:#fff;border-radius:10px;padding:0 6px;font-size:12px}.admc{flex:1;overflow:auto;padding:12px 14px 40px;max-width:720px;width:100%;margin:0 auto;box-sizing:border-box}
 .bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:flex-end;justify-content:center;z-index:10}
 .map{position:relative;z-index:0;border-radius:14px;overflow:hidden;margin-top:10px;border:1px solid var(--b)}
 .sheet{background:#fff;width:100%;max-width:480px;border-radius:22px 22px 0 0;padding:18px;max-height:88vh;overflow:auto}.sheet h2{margin:0 0 6px}
@@ -353,8 +354,9 @@ async function render(){
       if(!window._logged.has(k)){ window._logged.add(k); sb.rpc('log_search',{p_from:filter.from||'',p_to:filter.to||'',p_date:filter.date||null,p_period:filter.date?'date':filter.period,p_results:data.length}).then(()=>{},()=>{}); } }
     $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
       (data.map(t=>tripCard(t, user && t.driver_id===user.id ? '<span style="color:var(--m)">Ton trajet</span>' : undefined).replace('<div class="meta">',others[t.id]?`<div class="hint" style="font-weight:700">🔁 Trajet régulier : aussi ${others[t.id]} autre${others[t.id]>1?'s':''} date${others[t.id]>1?'s':''} à la même heure</div><div class="meta">`:'<div class="meta">')).join('') ||
-       `<div class="empty">Aucun trajet ${filter.period!=='all'&&!filter.date?'sur cette période':'pour l\'instant'}.${filter.period!=='all'&&!filter.date?`<br><button class="link" onclick="filter.period='all';render()">Voir tous les trajets à venir</button>`:''}<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`) +
+       `<div class="empty">Aucun trajet ${filter.period!=='all'&&!filter.date?'sur cette période':'pour l\'instant'}.${filter.period!=='all'&&!filter.date?`<br><button class="link" onclick="filter.period='all';render()">Voir tous les trajets à venir</button>`:''}${filter.from&&filter.to?'<div id="sdem"></div>':''}<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`) +
       `<button class="link" style="display:block;margin:14px auto 0" onclick="openFAQ()">❓ Questions fréquentes : légal, assurance, prix, installation…</button><button class="btn sec" style="margin-top:12px" onclick="openAlert()">🔔 Me prévenir des nouveaux trajets${filter.from||filter.to?` ${esc(filter.from||'Partout')} → ${esc(filter.to||'Partout')}`:''}</button>`;
+    if(!data.length && filter.from && filter.to) routeHint(filter.from, filter.to, 'sdem', 'search');
   }
 
   if (tab==='offer'){
@@ -392,9 +394,8 @@ async function render(){
     const upd = () => { const a=$('#of').value,b=$('#ot').value,s=+$('#os').value;
       if (!PLACES[a]||!PLACES[b]){ $('#oh2').textContent='Choisis le départ et l\'arrivée pour calculer le prix.'; return; }
       if (a===b){ $('#oh2').textContent='Choisis deux communes différentes.'; return; }
-      const dm=demandFor(a,b);
       const p=suggested(a,b,s), mx=maxPrice(a,b,s); $('#op').value=Math.min(p,mx);
-      $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · minimum <b>${eur(minPrice(a,b,s))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>${(v=>`⛽ ${km(a,b)} km × ${String(v.c).replace('.',',')} ${v.unit}/100 × ${eur(v.price)}/${v.unit} = ${eur(fuelCost(a,b))} ÷ 2 (vous + 1 passager)<br>${v.unit==='kWh'?'🔌 électrique : recharge estimée à domicile':FUELP?`prix moyen ${v.f==='gpl'?'du GPL':v.f==='diesel'?'du diesel':'de l\'essence'} dans l'Eure au ${new Date(FUELP.updated_at).toLocaleDateString('fr-FR')}`:'prix moyen estimé'} · ${v.micro?'voiturette':FUEL_NAME[v.f]+', voiture '+(me?.car_size||'moyenne')} <button class="link" style="font-size:inherit" onclick="go('profile');setTimeout(()=>$('#pfuel')?.scrollIntoView({block:'center'}),500)">modifier</button>`)(vehicle())}</small><div id="oest"></div>${dm?`<br><b style="color:var(--g)">🙋 ${dm} passager${dm>1?'s':''} ${dm>1?'cherchent':'cherche'} ce trajet : ${dm>1?'ils seront prévenus':'il sera prévenu'} si l'horaire correspond !</b>`:''}`; };
+      $('#oh2').innerHTML = `${km(a,b)} km · prix conseillé <b>${eur(Math.min(p,mx))}</b> · minimum <b>${eur(minPrice(a,b,s))}</b> · maximum légal <b>${eur(mx)}</b> par passager<br><small>${(v=>`⛽ ${km(a,b)} km × ${String(v.c).replace('.',',')} ${v.unit}/100 × ${eur(v.price)}/${v.unit} = ${eur(fuelCost(a,b))} ÷ 2 (vous + 1 passager)<br>${v.unit==='kWh'?'🔌 électrique : recharge estimée à domicile':FUELP?`prix moyen ${v.f==='gpl'?'du GPL':v.f==='diesel'?'du diesel':'de l\'essence'} dans l'Eure au ${new Date(FUELP.updated_at).toLocaleDateString('fr-FR')}`:'prix moyen estimé'} · ${v.micro?'voiturette':FUEL_NAME[v.f]+', voiture '+(me?.car_size||'moyenne')} <button class="link" style="font-size:inherit" onclick="go('profile');setTimeout(()=>$('#pfuel')?.scrollIntoView({block:'center'}),500)">modifier</button>`)(vehicle())}</small><div id="oest"></div><div id="odem"></div>`; routeHint(a,b,'odem','offer'); };
     const est = () => { const el=$('#oest'); if(!el) return; const p=+$('#op').value||0, s=+$('#os').value; if(!p||!$('#oh2 b')){ el.innerHTML=''; return; }
       el.innerHTML=`<div class="hint" style="margin-top:6px">💶 Tu récupères de <b>${eur(p)}</b> (1 passager) à <b>${eur(p*s)}</b> (${s} passager${s>1?'s':''}) par trajet · <button class="link" style="font-size:inherit" onclick="openEstim()">Voir l'estimation ›</button></div>`; };
     const upd2 = () => { if(!$('#of')) return; upd(); est(); meetChips(); };
@@ -508,7 +509,7 @@ async function render(){
         ? `<div class="note">✅ Activé : tes passagers acceptés peuvent te payer par carte. La somme est bloquée sur leur carte à la réservation (<b>paiement garanti</b>) et encaissée après le trajet. ${PAYOUT_TXT}</div>`
         : `<div class="hint">Pour recevoir les paiements par carte, crée ton compte de réception Stripe (pièce d'identité + IBAN, environ 5 minutes). Gratuit pour le conducteur. Tu es payé après chaque trajet : ${PAYOUT_TXT}</div><div class="hint" id="stst"></div><button class="btn" id="stbtn" onclick="stripeOnboard()">Activer le paiement par carte</button>`}</div>
       <div class="card" id="vcard"><h3>🪪 Badge ✓ Vérifié</h3><div class="hint">Chargement…</div></div>
-      ${me?.is_admin?`<div class="card"><h3>🛠️ Administration</h3><div class="hint">Donne ou retire le badge ✓ Vérifié après avoir contrôlé la pièce d'identité, le permis et l'assurance.</div><button class="btn" onclick="openAdmin()">Demandes de badge et membres</button></div>`:''}
+      ${me?.is_admin?`<div class="card"><h3>🛠️ Administration</h3><div class="hint">Donne ou retire le badge ✓ Vérifié après avoir contrôlé la pièce d'identité, le permis et l'assurance.</div><button class="btn" onclick="openAdmin()">Ouvrir l'administration</button></div>`:''}
       ${infoCard()}<button class="btn sec" onclick="openBug()">🐞 Signaler un problème technique</button>${fbButton()}<button class="btn sec" onclick="logout()">Se déconnecter</button>${legalLinks()}<div style="text-align:center;margin:6px 0 20px"><button class="link" style="color:#b91c1c" onclick="askDeleteAccount()">Supprimer mon compte</button></div>`;
     $('#pav').onchange=e=>{ if(e.target.files[0]) uploadAvatar(e.target.files[0]); };
     loadVerifCard(); pushState(); loadAlerts(); loadProgress();
@@ -741,6 +742,16 @@ async function resumeNext(){ let n=null; try{ n=JSON.parse(localStorage.getItem(
     if(!t){ const {data}=await sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type)').eq('id',n.id).maybeSingle();
       if(!data || new Date(data.depart_at)<new Date()) return toast('Le trajet que tu avais choisi n\'est plus disponible'); tripsCache.push(data); }
     openTrip(n.id); } }
+// Combien de personnes cherchent ce trajet ? (chiffres seulement, jamais de nom)
+async function routeHint(a,b,id,mode){ const key=a+'|'+b; routeHint.c=routeHint.c||{};
+  let d=routeHint.c[key]; if(!d){ const r=await sb.rpc('route_demand',{p_from:a,p_to:b}); d=routeHint.c[key]=r.data||{}; }
+  const el=$('#'+id); if(!el) return; const al=+d.alertes||0, rc=+d.recherches||0;
+  if(mode==='offer'){ if(!al&&!rc){ el.innerHTML=''; return; }
+    el.innerHTML=`<div class="hint" style="color:var(--g);font-weight:700;margin-top:6px">🙋 ${[al?`${al} passager${al>1?'s ont':' a'} une alerte pour ce trajet`:'',rc?`${rc} recherche${rc>1?'s':''} cette semaine`:''].filter(Boolean).join(' · ')}${al?` : ${al>1?'ils seront prévenus':'il sera prévenu'} si l'horaire correspond !`:''}</div>`; return; }
+  const n=Math.max(al,rc); el.innerHTML=(n?`<div class="note" style="margin-top:10px">🙋 <b>${n} autre${n>1?'s':''} personne${n>1?'s':''}</b> ${n>1?'cherchent':'cherche'} aussi ce trajet. Crée une alerte : dès qu'un conducteur le propose, vous serez prévenus.</div>`:'')+`<div id="snear"></div>`;
+  const {data:nx}=await sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type)').eq('from_place',a).eq('to_place',b).gte('depart_at',new Date().toISOString()).lt('depart_at',new Date(Date.now()+21*864e5).toISOString()).order('depart_at').limit(5);
+  const t=(nx||[]).find(x=>x.seats>x.booked); const sn=$('#snear'); if(!t||!sn) return; if(!tripsCache.find(x=>x.id===t.id)) tripsCache.push(t);
+  const dd=new Date(t.depart_at); sn.innerHTML=`<div class="note" style="margin-top:8px">💡 Un trajet existe <b>${dayLabel(dd)} à ${hm(dd)}</b> avec ${esc(t.driver?.first_name||'un voisin')}. <button class="link" onclick="openTrip('${t.id}')">Voir le trajet ›</button></div>`; }
 let ESTP='mois';
 function openEstim(){ const p=+$('#op').value||0, s=+$('#os').value;
   const reg=$('#orc')?.classList.contains('on'), ret=$('#oretc')?.classList.contains('on');
@@ -886,6 +897,7 @@ async function loadVerifQueue(){
   const box=$('#vqueue'); if(!box) return;
   sb.rpc('admin_stale_kept').then(({data:old})=>{ if(old?.length) sb.storage.from('verif-docs').remove(old); });
   const {data,error}=await sb.rpc('admin_list_verifs'); if(error){ box.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
+  admCount('badges',(data||[]).length);
   if(!data?.length){ box.innerHTML='<div class="hint">Aucune demande en attente ✅</div>'; return; }
   const urls={}; const all=data.flatMap(r=>r.files||[]);
   if(all.length){ const {data:su}=await sb.storage.from('verif-docs').createSignedUrls(all,600); (su||[]).forEach(x=>urls[x.path]=x.signedUrl); }
@@ -908,8 +920,33 @@ async function reviewVerif(uid,ok,btn){
   const u=(openAdmin._data||[]).find(x=>x.uid===uid); if(ok){ if(u){u.verified=true;u.verified_until=until;} if(uid===user.id){me.verified=true;me.verified_until=until;} }
   toast(ok?'Membre vérifié ✅ Documents supprimés':redo.length?'Document à refaire demandé ✅ Les autres sont gardés':'Demande refusée, documents supprimés'); loadVerifQueue(); $('#aq')?.oninput?.();
 }
-async function openAdmin(){
-  sheet('<h2>🛠️ Administration</h2><div class="chips" style="margin-bottom:8px">'+[['astats','📈 Statistiques'],['alist','👥 Membres'],['apay','💳 Paiements'],['atrips','🚗 Trajets'],['adem','🔔 Alertes & demandes'],['rqueue','🚩 Signalements'],['vqueue','✓ Badges'],['amail','📧 Mails'],['aann','📢 Annonces'],['aarch','🗄️ Supprimés']].map(([id,l])=>`<button class="chip" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})">${l}</button>`).join('')+'</div><h3>📈 Statistiques</h3><div id="astats"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">💳 Paiements par carte en cours</h3><div id="apay"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🚗 Trajets à venir</h3><div id="atrips"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🔔 Alertes et demandes</h3><div id="adem"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📢 Annonces dans l’appli</h3><div id="aann"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">👥 Tous les membres</h3><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div class="chips" id="afil" style="margin-top:8px"></div><div id="alist"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="closeSheet()">Fermer</button>');
+const ADM_TABS=[['home','📈','Accueil'],['members','👥','Membres'],['trips','🚗','Trajets'],['dem','🔔','Demandes'],['badges','✓','Badges'],['pay','💳','Paiements'],['rep','🚩','Signalements'],['com','📧','Communication']];
+function admTab(k){ openAdmin._tab=k; document.querySelectorAll('#adm section').forEach(x=>x.style.display=x.dataset.t===k?'block':'none');
+  document.querySelectorAll('#adm .admt button').forEach(b=>b.classList.toggle('on',b.dataset.t===k)); const c=$('#adm .admc'); if(c) c.scrollTop=0; }
+function closeAdmin(){ const A=$('#adm'); if(A) A.style.display='none'; document.body.style.overflow=''; closeSheet(); }
+function admCount(k,n){ openAdmin._cnt={...(openAdmin._cnt||{}),[k]:n}; const el=$('#admn-'+k); if(el){ el.textContent=n||''; el.style.display=n?'inline-block':'none'; } drawTodo(); }
+function drawTodo(){ const el=$('#atodo'); if(!el) return; const c=openAdmin._cnt||{};
+  const L=[['badges',c.badges,'demande de badge à vérifier','demandes de badge à vérifier'],['dem',c.dem,'demande de réservation sans réponse du conducteur','demandes de réservation sans réponse du conducteur'],['rep',c.rep,'signalement à traiter','signalements à traiter'],['pay',c.pay,'paiement par carte à décider','paiements par carte à décider'],['match',c.match,'alerte de membre avec un trajet qui correspond','alertes de membres avec un trajet qui correspond']].filter(x=>x[1]);
+  el.innerHTML=L.length?L.map(([k,n,a,b])=>`<button class="meta" style="width:100%;text-align:left;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-bottom:6px;cursor:pointer" onclick="admTab('${k==='match'?'dem':k}')"><span><b style="color:#b45309">${n}</b> ${n>1?b:a}</span><span>›</span></button>`).join(''):'<div class="note">Rien à traiter pour l\'instant ✅</div>'; }
+async function openAdmin(refresh){
+  let A=$('#adm');
+  if(A && A.style.display==='block' && !refresh){ closeSheet(); return; }
+  closeSheet(); openAdmin._cnt={};
+  if(!A){ A=document.createElement('div'); A.id='adm'; A.className='adm'; document.body.appendChild(A); }
+  A.style.display='block'; document.body.style.overflow='hidden';
+  A.innerHTML=`<div class="admh"><b>🛠️ Administration</b><button class="btn small sec" style="width:auto" onclick="closeAdmin()">✕ Quitter</button></div>
+    <div class="admt">${ADM_TABS.map(([k,e,l])=>`<button data-t="${k}" onclick="admTab('${k}')">${e} ${l}<span class="admn" id="admn-${k}"></span></button>`).join('')}</div>
+    <div class="admc">
+     <section data-t="home"><h3>À traiter</h3><div id="atodo"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📈 Statistiques</h3><div id="astats"><div class="hint">Chargement…</div></div></section>
+     <section data-t="members"><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div class="chips" id="afil" style="margin-top:8px"></div><div id="alist"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div></section>
+     <section data-t="trips"><h3>🚗 Trajets à venir</h3><div id="atrips"><div class="hint">Chargement…</div></div></section>
+     <section data-t="dem"><h3>🔔 Alertes et demandes</h3><div id="adem"><div class="hint">Chargement…</div></div></section>
+     <section data-t="badges"><h3>✓ Demandes de badge</h3><div id="vqueue"><div class="hint">Chargement…</div></div></section>
+     <section data-t="pay"><h3>💳 Paiements par carte en cours</h3><div id="apay"><div class="hint">Chargement…</div></div></section>
+     <section data-t="rep"><h3>🚩 Signalements</h3><div id="rqueue"><div class="hint">Chargement…</div></div></section>
+     <section data-t="com"><h3>📧 Écrire aux membres</h3><div id="amail"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📢 Annonces dans l’appli</h3><div id="aann"><div class="hint">Chargement…</div></div></section>
+    </div>`;
+  admTab(openAdmin._tab||'home');
   const {data,error}=await sb.rpc('admin_list_users'); if(error){ $('#alist').innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   await loadMailStats();
   const FIL=[['all','Tous',u=>true],['ver','✓ Vérifiés',u=>u.verified],['nover','⏳ Non vérifiés',u=>!u.verified],['pend','📄 Badge demandé',u=>u.verif_pending],['exp','⌛ À renouveler',u=>!!u.verified_until&&(!u.verified||daysTo(u.verified_until)<=30)],
@@ -929,7 +966,7 @@ async function openAdmin(){
 
 async function loadAdminPay(){ const el=$('#apay'); if(!el) return; const {data,error}=await sb.rpc('admin_payments');
   if(error){ el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
-  const L=data||[], pb=L.filter(x=>x.etat==='problem');
+  const L=data||[], pb=L.filter(x=>x.etat==='problem'); admCount('pay',pb.length);
   el.innerHTML = (L.length?`<div class="hint">${L.length} paiement${L.length>1?'s':''} garanti${L.length>1?'s':''} pas encore encaissé${L.length>1?'s':''}${pb.length?` · <b style="color:#b91c1c">${pb.length} à décider</b>`:''}</div>`:'<div class="hint">Aucun paiement en attente ✅</div>')
    + L.sort((a,b)=>(b.etat==='problem')-(a.etat==='problem')).map(x=>`<div class="meta" style="display:block"><b>${esc(x.de)} → ${esc(x.vers)}</b> · ${new Date(x.depart).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${hm(new Date(x.depart))} · <b>${eur((x.montant||0)/100)}</b>
      <br><small>Passager <button class="link" style="font-size:inherit" onclick="openHistory('${x.puid}','${jsq(x.passager||'')}')">${esc(x.passager||'?')}</button> → conducteur <button class="link" style="font-size:inherit" onclick="openHistory('${x.duid}','${jsq(x.conducteur||'')}')">${esc(x.conducteur||'?')}</button>${x.expire?` · garantie jusqu'au ${new Date(x.expire).toLocaleDateString('fr-FR')}`:''}</small>
@@ -996,6 +1033,7 @@ async function loadDemand2(){ const el=$('#adem'); if(!el) return; const [{data,
   const who=(n,id)=>`<button class="link" style="font-size:inherit" onclick="openHistory('${id}','${jsq(n||'')}')">${esc(n||'?')}</button>`;
   const box=(t,n,body)=>`<details style="margin-top:6px" ${n?'':''}><summary style="cursor:pointer;font-weight:700;padding:6px 0">${t} <span class="tag">${n}</span></summary>${body}</details>`;
   const top=(d.top||[]); const al=(d.alertes||[]), at=(d.attente||[]), av=(d.avenir||[]), rs=(d.recherches||[]);
+  admCount('dem',at.length); admCount('match',al.filter(x=>alertMatches(x,UT,x.uid).length).length);
   const PER={today:'aujourd\'hui',tomorrow:'demain','7':'les 7 prochains jours',all:'n\'importe quand'};
   const rsHtml = rs.length ? rs.map(x=>{ const quand=x.jour?whenText(x.jour):''; return `<div class="meta" style="display:block">${x.uid?who(x.prenom,x.uid):'<i>visiteur</i>'} · <small style="color:var(--m)">${dt(x.le)}</small><br>${esc(x.de||'Partout')} → ${esc(x.vers||'Partout')}<br>📅 ${esc(quand||PER[x.periode]||'')} · ${x.resultats?`<span style="color:var(--g)">${x.resultats} trajet${x.resultats>1?'s':''} trouvé${x.resultats>1?'s':''}</span>`:'<b style="color:#b91c1c">aucun trajet trouvé</b>'}${x.resultats?'':`<br><button class="btn small sec" style="margin-top:4px" onclick="fbPost('${jsq(x.de||'')}','${jsq(x.vers||'')}','tous',1,'${jsq(quand||(x.periode==='today'?'aujourd\'hui':x.periode==='tomorrow'?'demain':''))}')">📣 Préparer un post Facebook</button>`}</div>`; }).join('') : '<div class="hint">Aucune recherche notée pour l\'instant.</div>';
   el.innerHTML=
@@ -1184,7 +1222,7 @@ async function sendReport(target,bid,btn){ const reason=$('#rpm').value+' : '+$(
   if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Signalement envoyé. Tu vas recevoir un e-mail de confirmation 🙏'); }
 async function loadReports(){ const el=$('#rqueue'); if(!el) return; const {data,error}=await sb.rpc('admin_list_reports');
   if(error){el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`;return;}
-  openAdmin._reports=data||[];
+  openAdmin._reports=data||[]; admCount('rep',(data||[]).length);
   el.innerHTML=(data||[]).map(r=>`<div class="card" style="box-shadow:none;border:1px solid var(--b)"><b>${esc(r.reporter||'?')}</b> → <b>${esc(r.target||'?')}</b>${r.target_blocked?' <span class="tag" style="background:#fee2e2;color:#b91c1c">🚫 Bloqué</span>':''}
     <br><small class="hint">${new Date(r.created_at).toLocaleString('fr-FR')}${r.nb_reports>1?` · <b style="color:#b91c1c">${r.nb_reports} signalements</b> contre ce membre`:''}${r.warnings?` · ${r.warnings} avertissement${r.warnings>1?'s':''} déjà envoyé${r.warnings>1?'s':''}`:''}</small>
     <div style="margin:6px 0">${esc(r.reason)}</div>
@@ -1198,7 +1236,7 @@ function askWarn(id){ const r=(openAdmin._reports||[]).find(x=>x.id===id); if(!r
     <button class="btn" onclick="doWarn(${id},this)">Envoyer l'avertissement</button><button class="btn sec" onclick="openAdmin()">Retour</button>`); }
 async function doWarn(id,btn){ const m=$('#wmsg').value.trim(); if(m.length<5) return toast('Écris un message'); btn.disabled=true;
   const {error}=await sb.rpc('admin_warn_report',{rid:id,p_msg:m}); if(error){ btn.disabled=false; return toast(errMsg(error)); }
-  toast('Avertissement envoyé ⚠️'); openAdmin(); }
+  toast('Avertissement envoyé ⚠️'); closeSheet(); loadReports(); }
 
 /* ======== Bulles d'activité de la communauté ======== */
 let FEEDQ=[], feedBusy=false, feedTimer=null;
@@ -1283,27 +1321,32 @@ function askBlock(uid,name,b){
     : 'Le membre pourra de nouveau publier, réserver et écrire. Ses trajets annulés ne reviennent pas.'}</div>
     <button class="btn" ${b?'style="background:#b91c1c"':''} onclick="doBlock('${uid}',${b},this)">${b?'Bloquer':'Débloquer'}</button><button class="btn sec" onclick="openAdmin()">Retour</button>`); }
 async function doBlock(uid,b,btn){ btn.disabled=true; const {error}=await sb.rpc('admin_set_blocked',{target:uid,b}); if(error){ btn.disabled=false; return toast(errMsg(error)); }
-  toast(b?'Membre bloqué 🚫':'Membre débloqué 🔓'); openAdmin(); }
+  toast(b?'Membre bloqué 🚫':'Membre débloqué 🔓'); openAdmin(true); }
 function askDeleteUser(uid,name){
   sheet(`<h2>🗑️ Supprimer ${esc(name||'ce membre')}</h2><div class="hint">Action <b>définitive</b> : ses trajets et réservations à venir sont annulés (les personnes concernées sont prévenues), puis le compte est effacé de l'appli.</div>
     <div class="note">Une archive (e-mail, trajets, réservations, messages, avis, signalements) est gardée <b>1 an</b> dans « Comptes supprimés », puis effacée automatiquement.</div>
     <div class="hint">💡 Après un signalement, <b>bloquer</b> suffit souvent : c'est réversible.</div>
     <button class="btn" style="background:#b91c1c" onclick="doDeleteUser('${uid}',this)">Supprimer définitivement</button><button class="btn sec" onclick="openAdmin()">Retour</button>`); }
 async function doDeleteUser(uid,btn){ btn.disabled=true; const {error}=await sb.rpc('admin_delete_user',{target:uid}); if(error){ btn.disabled=false; return toast(errMsg(error)); }
-  toast('Compte supprimé et archivé 🗄️'); openAdmin(); }
+  toast('Compte supprimé et archivé 🗄️'); openAdmin(true); }
 async function loadArchives(){ const el=$('#aarch'); if(!el) return; const {data,error}=await sb.rpc('admin_list_archives');
   if(error){ el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   el.innerHTML = data?.length ? data.map(a=>`<div class="meta"><span><b>${esc(a.first_name||'—')}</b><br><small style="color:var(--m)">${esc(a.email||'')} · supprimé le ${new Date(a.deleted_at).toLocaleDateString('fr-FR')} ${esc(a.deleted_by||'')}</small></span><button class="btn small sec" onclick="openHistory('${a.uid}','${jsq(a.first_name||'')}')">📜</button></div>`).join('') : '<div class="hint">Aucun compte supprimé.</div>'; }
 const fdt = d => new Date(d).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
 async function openHistory(uid,name){
-  sheet(`<h2>📜 ${esc(name||'Ce membre')}</h2><div id="hact"><div class="hint">Chargement…</div></div><h3 style="margin-top:14px">Historique</h3><div id="hbox"><div class="hint">Chargement…</div></div><button class="btn sec" onclick="openAdmin()">Retour</button>`);
+  sheet(`<h2>👤 ${esc(name||'Ce membre')}</h2><div id="hact"><div class="hint">Chargement…</div></div>
+    <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;padding:6px 0">📨 Derniers messages reçus</summary><div id="hmsg"><div class="hint">Chargement…</div></div></details>
+    <details style="margin-top:4px"><summary style="cursor:pointer;font-weight:700;padding:6px 0">📜 Historique complet</summary><div id="hbox"><div class="hint">Chargement…</div></div></details>
+    <button class="btn sec" onclick="openAdmin()">← Retour</button>`);
+  sb.rpc('admin_notif_log',{target:uid,n:5}).then(({data:M})=>{ const el=$('#hmsg'); if(!el) return;
+    el.innerHTML=(M||[]).length?M.map(m=>`<div class="meta" style="display:block"><small style="color:var(--m)">${fdt(m.at)} · ${m.by_mail?'✉️ e-mail + 🔔':'🔔 notification'}</small><br>${esc(m.subject||'')}</div>`).join(''):'<div class="hint">Aucun message automatique envoyé depuis la mise en place du journal.</div>'; });
   Promise.all([sb.rpc('admin_member_activity',{target:uid}),upTrips()]).then(([{data:A,error:E},UT])=>{ const el=$('#hact'); if(!el) return;
     if(E){ el.innerHTML=''; return; } const dl=x=>{const d=new Date(x);return `${d.toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'numeric'})} ${hm(d)}`;};
     const ST={pending:'⏳ en attente',accepted:'✅ acceptée',refused:'❌ refusée'};
     const tr=(A.trajets||[]).map(t=>`<div class="meta" style="display:block">🚗 <b>${esc(t.de)} → ${esc(t.vers)}</b> · ${dl(t.depart)}<br><small>${t.reservees}/${t.places} place${t.places>1?'s':''} réservée${t.reservees>1?'s':''} · ${eur(t.prix)}${t.demandes?` · <b style="color:#b45309">${t.demandes} demande${t.demandes>1?'s':''} en attente</b>`:''}</small></div>`).join('');
     const bk=(A.reservations||[]).map(b=>`<div class="meta" style="display:block">🧍 <b>${esc(b.de)} → ${esc(b.vers)}</b> · ${dl(b.depart)}<br><small>avec ${esc(b.conducteur||'?')} · ${nPl(b.places)} · ${ST[b.statut]||b.statut}${b.paye?' · 💳 payé':''}</small></div>`).join('');
     const al=(A.alertes||[]).map(a=>`<div class="meta" style="display:block">🔔 <b>${esc(a.de||'Partout')} → ${esc(a.vers||'Partout')}</b> · ${esc(whenText(a.jour,a.jours,a.heure,a.creneau)||'n\'importe quand')}${matchHtml(alertMatches(a,UT,uid))}</div>`).join('');
-    el.innerHTML=`<h3>En cours</h3>${tr?'<div class="hint"><b>Trajets proposés</b></div>'+tr:''}${bk?'<div class="hint" style="margin-top:6px"><b>Réservations</b></div>'+bk:''}${al?'<div class="hint" style="margin-top:6px"><b>Alertes</b></div>'+al:''}${tr||bk||al?'':'<div class="hint">Aucun trajet, réservation ni alerte en cours.</div>'}`; });
+    el.innerHTML=`${tr?'<div class="hint"><b>Trajets proposés</b></div>'+tr:''}${bk?'<div class="hint" style="margin-top:6px"><b>Réservations</b></div>'+bk:''}${al?'<div class="hint" style="margin-top:6px"><b>Alertes</b></div>'+al:''}${tr||bk||al?'':'<div class="hint">Aucun trajet, réservation ni alerte en cours.</div>'}`; });
   const {data,error}=await sb.rpc('admin_user_history',{target:uid}); const el=$('#hbox'); if(!el) return;
   if(error){ el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   const N=data.noms||{}, who=id=>id?esc(N[id]||'?'):'', ev=data.events||[], rp=data.signalements||[], ar=data.archive;

@@ -31,7 +31,7 @@ select,input,textarea{width:100%;padding:12px;border:1px solid var(--b);border-r
 .price{font-weight:800;font-size:18px;color:var(--g);text-align:right}.price small{display:block;font-size:11px;color:var(--m);font-weight:600}
 .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--b);font-size:14px}
 .av{width:32px;height:32px;border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-weight:800;margin-right:8px;flex:none}
-.drv{display:flex;align-items:center}
+.drv{display:flex;align-items:center}.card>.meta{flex-wrap:wrap}.card>.meta>.drv{flex:1 1 190px;min-width:0}.acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin-left:auto}
 .tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;margin-left:6px}
 .t-ok{background:#dcfce7;color:#15803d}.t-w{background:#fce7f3;color:#be185d}
 .hint{font-size:13px;color:var(--m);margin-top:8px;line-height:1.45}.empty{text-align:center;color:var(--m);padding:28px 10px}
@@ -212,7 +212,7 @@ function addEyes(root){ (root||document).querySelectorAll('input[type=password]:
 new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:true,subtree:true});
 function sheet(html){ if($('#bg').style.display!=='flex' && $('#adm')?.style.display==='block') navPush(); $('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 // Mise à jour automatique : au retour dans l'appli, recharge si une nouvelle version est en ligne (jamais pendant une saisie ou une fenêtre ouverte)
-const APP_V='2026-11-27a'; let _vChk=0;
+const APP_V='2026-11-27c'; let _vChk=0;
 async function checkUpdate(){ if(!/^https?:/.test(location.protocol)||Date.now()-_vChk<3e5) return; _vChk=Date.now();
   try{ const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const m=/const APP_V='([^']+)'/.exec(await r.text());
     if(!m||m[1]===APP_V) return; const busy=$('#bg').style.display==='flex'||$('#adm')?.style.display==='block'||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'');
@@ -300,7 +300,7 @@ function tripCard(t, actions){
    <div class="hint" style="font-weight:700;color:${left>0?'var(--g)':'#b91c1c'}">${seatsText(left,t.seats)}</div>
    ${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}
    <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${stars(t.driver)}${badge(t.driver)||(t.driver&&t.driver.first_name?'<span class="tag" style="background:#f3f4f6;color:#6b7280">Profil non vérifié</span>':'')}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}${t.instant?'<span class="tag t-ok">⚡ Réservation immédiate</span>':''}${soonText(d)?`<span class="tag new">⏱ ${soonText(d)}</span>`:''}${t.driver?.created_at?`<br><small style="color:var(--m)">${sinceText(t.driver.created_at)}</small>`:''}</div></div>
-   ${actions ?? (d<new Date()?'<span style="color:var(--m)">Parti</span>':left>0?`<button class="btn small" onclick="openTrip('${t.id}')">Réserver</button>`:'<span style="color:var(--m)">Complet</span>')}</div></div>`;
+   <div class="acts">${actions ?? (d<new Date()?'<span style="color:var(--m)">Parti</span>':left>0?`<button class="btn small" onclick="openTrip('${t.id}')">Réserver</button>`:'<span style="color:var(--m)">Complet</span>')}</div></div></div>`;
 }
 
 let tripsCache = [];
@@ -434,14 +434,15 @@ async function render(){
       return n===0?"Aujourd'hui":n===1?'Demain':n===-1?'Hier':new Date(d).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}); };
     const byDay = (lst, dOf, f) => { let last=''; return lst.map(x=>{ const h=dayHead(dOf(x)); const head=h!==last?`<div class="dayh">${h}</div>`:''; last=h; return head+f(x); }).join(''); };
     const grp = (color, html) => `<div class="tgrp" style="--bc:${color}">${html}</div>`;
-    const C = {ok:'#16a34a', wait:'#f59e0b', off:'#9ca3af', none:'#d1d5db'};
-    const legend = `<div class="hint" style="margin:0 4px 6px">🟩 confirmé · 🟧 en attente · ⬜ passé ou refusé</div>`;
+    const C = {ok:'#16a34a', wait:'#f59e0b', off:'#9ca3af', none:'#60a5fa'};
+    const legend = `<div class="hint" style="margin:0 4px 6px">🟩 confirmé · 🟧 à accepter · 🟦 pas encore de réservation · ⬜ passé ou refusé</div>`;
     const pastBox = (html,n) => n ? `<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700;padding:8px 4px;color:var(--m)">🕘 Trajets passés (${n})</summary>${html}</details>` : '';
     const bCard = b=>{ const d=b.trip.driver||{}, amt=b.trip.price*b.seats, past=isPast(b.trip);
         return grp(past||b.status==='refused'?C.off:b.status==='pending'?C.wait:C.ok, tripCard(b.trip, `<span><button class="btn small sec" onclick="openChat('${b.id}','${jsq(d.first_name||'')}')">💬${unreadDot(b.id)}</button>${past?'':b.status==='refused'?` <button class="btn small sec" onclick="removeB('${b.id}',this)">Retirer</button>`:` <button class="btn small sec" onclick="cancelB('${b.id}',${isHeld(b)})">Annuler</button>`}</span>`) +
         `<div class="card" style="margin-top:-8px"><div class="meta" style="border:0;margin:0;padding:0"><span>${STATUS[b.status]||''} · ${nPl(b.seats)}${b.children?` (dont ${b.children} enfant${b.children>1?'s':''})`:''} · <b>${eur(amt)}</b></span>
          ${b.paid ? '<span class="tag t-ok">💳 Payé</span>' : isHeld(b) ? '<span class="tag t-ok">💳 Garanti</span>' : ''}</div>
          ${b.status==='accepted' && !b.paid && !isHeld(b) && b.pay_state!=='released' && !past ? payChoice(b, d, amt, b.trip) : ''}
+         ${b.status==='accepted' ? couponBtn(b.trip,'p') : ''}
          ${b.status==='accepted' ? payStateHTML(b, new Date(b.trip.depart_at)<new Date(), d.first_name||'le conducteur') : ''}
          ${past && !isHeld(b) ? `<div class="hint">${b.status==='accepted'?'✔️ Trajet effectué':'Trajet passé'}</div>` : ''}
          ${b.status==='accepted' && !past && (plates[b.trip.driver_id]||carText(d)) ? `<div class="note">🚗 Véhicule du conducteur : <b>${carText(d)||'—'}</b>${plates[b.trip.driver_id]?` · plaque <b>${esc(plates[b.trip.driver_id])}</b>`:''}</div>` : ''}
@@ -454,7 +455,7 @@ async function render(){
     const driverHTML = `<h3 style="margin:4px">Mes trajets proposés</h3>` + ((mt.data||[]).length?legend:'') +
       (((mt.data||[]).filter(t=>!isPast(t)).length || !(mt.data||[]).length) ? '' : '<div class="empty">Aucun trajet à venir.<br><br><button class="btn sec" onclick="go(\'offer\')">Proposer un trajet</button></div>') +
       [(mt.data||[]).filter(t=>!isPast(t)), (mt.data||[]).filter(t=>isPast(t)).reverse()].map((lst,ip)=>{ const h=byDay(lst, t=>t.depart_at, t => { const acc=t.bookings.filter(b=>b.status==='accepted'), accS=acc.reduce((n,b)=>n+b.seats,0);
-        return grp(ip?C.off:t.bookings.some(b=>b.status==='pending')?C.wait:acc.length?C.ok:C.none, tripCard({...t, driver:me}, ip?'<span class="tag">✔️ Passé</span>':`<button class="btn small sec" onclick="shareTrip('${t.id}')">🔗 Partager</button> <button class="btn small sec" onclick="editTrip('${t.id}')">Modifier</button> ${lastOfSeries(t)?`<button class="btn small sec" onclick="prolong('${t.id}',this)">🔁 Prolonger</button> `:''}<button class="btn small sec" onclick="delTrip('${t.id}',${t.bookings.filter(b=>b.status!=='refused').length})">Supprimer</button>`) +
+        return grp(ip?C.off:t.bookings.some(b=>b.status==='pending')?C.wait:acc.length?C.ok:C.none, tripCard({...t, driver:me}, ip?'<span class="tag">✔️ Passé</span>':`<button class="btn small sec" onclick="shareTrip('${t.id}')">🔗 Partager</button> <button class="btn small sec" onclick="editTrip('${t.id}')">Modifier</button> ${lastOfSeries(t)?`<button class="btn small sec" onclick="prolong('${t.id}',this)">🔁 Prolonger</button> `:''}<button class="btn small sec" onclick="delTrip('${t.id}',${t.bookings.filter(b=>b.status!=='refused').length})">Supprimer</button>`) + (ip||!acc.length?'':`<div style="margin-top:-6px;margin-bottom:10px">${couponBtn(t,'d')}</div>`) +
         (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${nPl(b.seats)}${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}${b.passenger?.created_at?`<br><small style="color:var(--m)">${sinceText(b.passenger.created_at)}</small>`:''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Encaissé</span>':b.pay_state==='held'?' <span class="tag t-ok">💳 Paiement garanti</span>':b.pay_state==='problem'?' <span class="tag">⏸️ Paiement en attente</span>':b.status==='accepted'&&b.pay_method?` <span class="tag">${b.pay_method==='cash'?'💶 Paiera en espèces':b.pay_method==='paypal'?'🅿️ Paiera par PayPal':'💳 Paiera par carte'}</span>`:''}${canRate(b,t)?` <button class="btn small" onclick="openReview('${b.id}','${jsq(b.passenger?.first_name||'')}')">⭐ Noter</button>`:''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${jsq(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}${accS?`<div class="hint" style="margin-top:6px">💶 ${ip?'Tu as récupéré':'Tu récupères'} <b>${eur(t.price*accS)}</b> (${nPl(accS)} confirmée${accS>1?'s':''})</div>`:''}</div>` : '')); }
       ); return ip?pastBox(h,lst.length):h; }).join('') + ((mt.data||[]).length ? '' : `<div class="empty">Aucun trajet proposé.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`);
     v.innerHTML = mode==='driver' ? driverHTML : passengerHTML;
@@ -1463,7 +1464,7 @@ let meetPick=null;
 // 📍 Points de rendez-vous conseillés (🅿️ parking gratuit à la journée · 📍 arrêt minute · 🤝 partenaire)
 const MEETPOINTS = [
   { name:'Brasserie Le Nicolas Poussin', addr:'26 place Nicolas Poussin', cities:['Les Andelys'], lat:49.2470, lng:1.4205, partner:true, geo:'26 place Nicolas Poussin 27700 Les Andelys' },
-  { name:'Boulangerie La Maison L', addr:'2 rue de la Madeleine', cities:['Les Andelys'], lat:49.2466, lng:1.4196, partner:true, geo:'2 rue de la Madeleine 27700 Les Andelys' },
+  { name:'Boulangerie La Maison L', addr:'2 rue de la Madeleine', cities:['Les Andelys'], lat:49.2466, lng:1.4196, partner:true, offer:'Café + croissant à\u00a02\u00a0€', offerFrom:'6h30', geo:'2 rue de la Madeleine 27700 Les Andelys' },
   { name:'Parking Intermarché Les Andelys', addr:'rue Maréchal Foch', cities:['Les Andelys'], lat:49.248567, lng:1.438245 },
   { name:'Parking Carrefour Market Les Andelys', addr:'avenue de la République', cities:['Les Andelys'], lat:49.24445, lng:1.40527 },
   { name:'Aire de covoiturage de Douains', addr:'RD181 Brécourt, sortie A13 Vernon', cities:['Vernon','Gare de Vernon-Giverny','Saint-Marcel','Pacy-sur-Eure'], lat:49.060458, lng:1.421138, park:true },
@@ -1474,7 +1475,28 @@ const MEETPOINTS = [
 ];
 const meetOf = mp => MEETPOINTS.find(x=>mp && mp.startsWith(x.name));
 const partnerOf = mp => meetOf(mp)?.partner;
-const mpTags = mp => { const x=meetOf(mp); if(!x) return ''; if(x.partner) return ' <span class="tag t-ok">🤝 Partenaire · places à proximité</span>'; return (x.park?' <span class="tag t-ok">🅿️ Parking gratuit</span>':' <span class="tag" style="background:#f3f4f6;color:#374151">📍 Arrêt minute</span>')+(x.partner?' <span class="tag t-ok">🤝 partenaire</span>':''); };
+const offerOf = mp => { const x=meetOf(mp); return x&&x.partner&&x.offer?x:null; };
+const sameDay = d => new Date(d).toDateString()===new Date().toDateString();
+// Coupon offre partenaire : seulement le jour du trajet, pour le conducteur (avec au moins un passager accepté) et les passagers acceptés
+window._cp={};
+const couponBtn = (t,role) => { if(!offerOf(t.meeting_point)||!sameDay(t.depart_at)) return ''; _cp[t.id]={t,role};
+  return `<button class="btn" style="margin-top:8px;background:#f59e0b" onclick="couponSheet('${t.id}')">🎟️ Mon offre partenaire</button>`; };
+function couponSheet(id){ const c=_cp[id]; if(!c) return; const t=c.t, x=offerOf(t.meeting_point), d=new Date(t.depart_at);
+  sheet(`<div style="background:linear-gradient(160deg,#0f766e,#14b8a6);margin:-20px -20px 0;padding:22px 18px 18px;border-radius:20px 20px 0 0;text-align:center;color:#fff">
+    <div style="font-weight:800;opacity:.95">🚗 Covoit' Andelys</div><div style="font-size:26px;font-weight:900;margin-top:4px">🎟️ Offre partenaire</div>
+    <div style="background:#fff;color:#0f172a;border-radius:22px;padding:20px 16px;margin-top:14px;box-shadow:0 10px 26px rgba(0,0,0,.2)">
+      <div style="font-weight:800;color:#0f766e">🥐 ${esc(x.name)}</div>
+      <div style="font-size:28px;font-weight:900;line-height:1.15;margin:6px 0 2px">☕ ${esc(x.offer)}</div>
+      <div style="border-top:2px dashed #cbd5e1;margin:16px -16px"></div>
+      <div style="font-size:36px;font-weight:900">${esc(me?.first_name||'')}</div>
+      <div style="font-size:21px;font-weight:800;color:#0f766e">${dateTxt(new Date()).replace(/^./,m=>m.toUpperCase())}</div>
+      <div style="color:#475569;margin-top:6px">🚗 ${c.role==='d'?'Conducteur':'Passager'} · ${esc(t.from_place)} → ${esc(t.to_place)} · ${hm(d)}</div>
+      <div style="display:inline-flex;align-items:center;gap:8px;margin-top:14px;background:#ecfdf5;border-radius:999px;padding:8px 16px;font-size:26px;font-weight:900;color:#065f46;font-variant-numeric:tabular-nums"><span style="width:12px;height:12px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 5px rgba(22,163,74,.25)"></span><span id="cpclk"></span><small style="font-size:12px;color:#16a34a">EN DIRECT</small></div>
+      <div style="margin-top:12px;font-weight:700;color:#334155">✅ Valable aujourd'hui uniquement${x.offerFrom?', dès '+esc(x.offerFrom):''}</div></div>
+    <div style="margin-top:14px;font-weight:700">Présentez cet écran en caisse<br><small style="font-weight:600;opacity:.9">L'heure défile en direct : ce n'est pas une capture d'écran</small></div></div>
+    <button class="btn sec" style="margin-top:14px" onclick="closeSheet()">Fermer</button>`);
+  const tick=()=>{ const el=$('#cpclk'); if(!el) return clearInterval(iv); el.textContent=new Date().toLocaleTimeString('fr-FR'); }; const iv=setInterval(tick,1000); tick(); }
+const mpTags = mp => { const x=meetOf(mp); if(!x) return ''; if(x.partner) return ' <span class="tag t-ok">🤝 Partenaire · places à proximité</span>'+(x.offer?' <span class="tag" style="background:#fef3c7;color:#92400e">☕ Offre partenaire</span>':''); return (x.park?' <span class="tag t-ok">🅿️ Parking gratuit</span>':' <span class="tag" style="background:#f3f4f6;color:#374151">📍 Arrêt minute</span>')+(x.partner?' <span class="tag t-ok">🤝 partenaire</span>':''); };
 async function pickMeet(i){ const x=MEETPOINTS[i]; $('#omp').value=`${x.name} – ${x.addr}`;
   meetPick={lat:x.lat,lng:x.lng}; meetBtn(); meetChips(); toast(x.partner?'🤝 Point partenaire choisi':x.park?'🅿️ Point choisi : parking gratuit':'📍 Point choisi : arrêt minute');
   if(x.geo) try{ const r=await fetch('https://data.geopf.fr/geocodage/search?limit=1&q='+encodeURIComponent(x.geo)); const g=(await r.json())?.features?.[0];

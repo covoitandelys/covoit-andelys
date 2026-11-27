@@ -212,7 +212,7 @@ function addEyes(root){ (root||document).querySelectorAll('input[type=password]:
 new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:true,subtree:true});
 function sheet(html){ if($('#bg').style.display!=='flex' && $('#adm')?.style.display==='block') navPush(); $('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 // Mise à jour automatique : au retour dans l'appli, recharge si une nouvelle version est en ligne (jamais pendant une saisie ou une fenêtre ouverte)
-const APP_V='2026-11-27f'; let _vChk=0;
+const APP_V='2026-11-27h'; let _vChk=0;
 async function checkUpdate(){ if(!/^https?:/.test(location.protocol)||Date.now()-_vChk<3e5) return; _vChk=Date.now();
   try{ const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const m=/const APP_V='([^']+)'/.exec(await r.text());
     if(!m||m[1]===APP_V) return; const busy=$('#bg').style.display==='flex'||$('#adm')?.style.display==='block'||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'');
@@ -223,6 +223,8 @@ function closeSheet(){const wasChat=!!chatTimer;$('#bg').style.display='none';cl
 $('#bg').onclick = e => { if (e.target.id==='bg') closeSheet(); };
 function errMsg(e){const m=((e&&e.message)||'').replace(/(^|\D)([01]) place\(s\) réservée\(s\)/g,'$1$2 place réservée').replace(/(\d+) place\(s\) réservée\(s\)/g,'$1 places réservées').replace(/(^|\D)([01]) place\(s\)/g,'$1$2 place').replace(/(\d+) place\(s\)/g,'$1 places');
  if(m.includes('places_ok'))return 'Plus assez de places sur ce trajet';
+ if(m.includes('women_only_passenger'))return 'Ce trajet est réservé aux femmes : indique « Je suis : une femme » dans ton profil';
+ if(m.includes('women_only_driver'))return 'Pour proposer un trajet réservé aux femmes, indique « Je suis : une femme » dans ton profil';
  if(m.includes('déjà une demande'))return 'Tu as déjà une demande sur ce trajet';
  if(m.includes('déjà parti'))return 'Ce trajet est déjà parti';
  if(m.includes('paypal_me'))return 'Identifiant PayPal invalide (lettres et chiffres uniquement)';
@@ -247,6 +249,7 @@ async function loadMe(){
   const { data:{ session } } = await sb.auth.getSession();
   user = session?.user || null;
   me = user ? (await sb.from('profiles').select('*').eq('id', user.id).single()).data : null;
+  if(me){ try{ me.sex=(await sb.from('profile_private').select('sex').eq('id',user.id).maybeSingle()).data?.sex||null; }catch(_){} }
 }
 
 async function refreshNotif(){
@@ -396,7 +399,7 @@ async function render(){
      <div id="opart"></div>
      <button class="btn sec small" type="button" id="omb" style="margin-top:8px" onclick="openMeetMap()">🗺️ Placer sur la carte</button>
      <div class="chips"><button class="chip" id="opt" onclick="this.classList.toggle('on')">🐾 Animaux acceptés</button><button class="chip" id="om2" onclick="this.classList.toggle('on')">💺 Max 2 à l'arrière</button>
-     <button class="chip" id="oi" onclick="this.classList.toggle('on')">⚡ Réservation instantanée <span class="tag t-ok" style="margin-left:4px">👍 Conseillé</span></button><button class="chip" id="ow" onclick="this.classList.toggle('on')">♀ Réservé aux femmes</button></div>
+     <button class="chip" id="oi" onclick="if($('#ow')?.classList.contains('on'))return toast('Un trajet réservé aux femmes est toujours validé par la conductrice');this.classList.toggle('on')">⚡ Réservation instantanée <span class="tag t-ok" style="margin-left:4px">👍 Conseillé</span></button><button class="chip" id="ow" onclick="womenChip(this,'oi')">♀ Réservé aux femmes</button></div>
      <div class="hint">⚡ <b>Instantanée</b> : tes passagers réservent sans attendre ta réponse, donc plus de réservations. Tu es prévenu et tu peux annuler si besoin. Sans elle, tu acceptes ou refuses chaque demande.</div>
      <div class="note">⚖️ Covoiturage = <b>partage des frais</b>. Uniquement des trajets que tu fais <b>pour toi-même</b>, prix plafonné, ${MAX_DAY} trajets max par jour. Le trajet est toujours non-fumeur.</div>
      ${me?.verified?'':`<div class="note warn">🪪 <b>Ton profil n'est pas encore vérifié.</b> Tes trajets affichent « Profil non vérifié » : les passagers réservent bien plus volontiers avec un conducteur ✓ Vérifié. <button class="link" onclick="go('profile');setTimeout(()=>$('#vcard')?.scrollIntoView({block:'center'}),600)">Obtenir le badge (2 min)</button></div>`}
@@ -456,7 +459,7 @@ async function render(){
       (((mt.data||[]).filter(t=>!isPast(t)).length || !(mt.data||[]).length) ? '' : '<div class="empty">Aucun trajet à venir.<br><br><button class="btn sec" onclick="go(\'offer\')">Proposer un trajet</button></div>') +
       [(mt.data||[]).filter(t=>!isPast(t)), (mt.data||[]).filter(t=>isPast(t)).reverse()].map((lst,ip)=>{ const h=byDay(lst, t=>t.depart_at, t => { const acc=t.bookings.filter(b=>b.status==='accepted'), accS=acc.reduce((n,b)=>n+b.seats,0);
         return grp(ip?C.off:t.bookings.some(b=>b.status==='pending')?C.wait:acc.length?C.ok:C.none, tripCard({...t, driver:me}, ip?'<span class="tag">✔️ Passé</span>':`<button class="btn small sec" onclick="shareTrip('${t.id}')">🔗 Partager</button> <button class="btn small sec" onclick="editTrip('${t.id}')">Modifier</button> ${lastOfSeries(t)?`<button class="btn small sec" onclick="prolong('${t.id}',this)">🔁 Prolonger</button> `:''}<button class="btn small sec" onclick="delTrip('${t.id}',${t.bookings.filter(b=>b.status!=='refused').length})">Supprimer</button>`) + (ip||!acc.length?'':`<div style="margin-top:-6px;margin-bottom:10px">${couponBtn(t,'d')}</div>`) +
-        (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${nPl(b.seats)}${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}${b.passenger?.created_at?`<br><small style="color:var(--m)">${sinceText(b.passenger.created_at)}</small>`:''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Encaissé</span>':b.pay_state==='held'?' <span class="tag t-ok">💳 Paiement garanti</span>':b.pay_state==='problem'?' <span class="tag">⏸️ Paiement en attente</span>':b.status==='accepted'&&b.pay_method?` <span class="tag">${b.pay_method==='cash'?'💶 Paiera en espèces':b.pay_method==='paypal'?'🅿️ Paiera par PayPal':'💳 Paiera par carte'}</span>`:''}${canRate(b,t)?` <button class="btn small" onclick="openReview('${b.id}','${jsq(b.passenger?.first_name||'')}')">⭐ Noter</button>`:''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${jsq(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}${accS?`<div class="hint" style="margin-top:6px">💶 ${ip?'Tu as récupéré':'Tu récupères'} <b>${eur(t.price*accS)}</b> (${nPl(accS)} confirmée${accS>1?'s':''})</div>`:''}</div>` : '')); }
+        (t.bookings.length ? `<div class="card" style="margin-top:-8px"><b>Passagers</b>${t.bookings.map(b=>`<div class="meta"><span>${av(b.passenger?.first_name, b.passenger?.avatar_url)}${esc(b.passenger?.first_name||'Passager')} · ${nPl(b.seats)}${b.children?` <span class="tag">👶 dont ${b.children} enfant${b.children>1?'s':''}</span>`:''}${seenBefore&&b.created_at>seenBefore?'<span class="tag new">Nouveau</span>':''}${b.passenger?.created_at?`<br><small style="color:var(--m)">${sinceText(b.passenger.created_at)}</small>`:''}<br>${STATUS[b.status]||''}${b.paid?' <span class="tag t-ok">💳 Encaissé</span>':b.pay_state==='held'?' <span class="tag t-ok">💳 Paiement garanti</span>':b.pay_state==='problem'?' <span class="tag">⏸️ Paiement en attente</span>':b.status==='accepted'&&b.pay_method?` <span class="tag">${b.pay_method==='cash'?'💶 Paiera en espèces':b.pay_method==='paypal'?'🅿️ Paiera par PayPal':'💳 Paiera par carte'}</span>`:''}${canRate(b,t)?` <button class="btn small" onclick="openReview('${b.id}','${jsq(b.passenger?.first_name||'')}')">⭐ Noter</button>`:''}</span><span>${b.status==='pending'?`<button class="btn small" onclick="respond('${b.id}',true)">✅</button> <button class="btn small sec" onclick="respond('${b.id}',false)">❌</button> `:''}<button class="btn small sec" onclick="openChat('${b.id}','${jsq(b.passenger?.first_name||'')}')">💬${unreadDot(b.id)}</button></span></div>`).join('')}${t.bookings.some(b=>b.status==='pending')?(t.women_only?'<div class="note warn" style="margin-top:8px">♀ Vérifie que la demande vient bien d\'une femme (prénom, photo). En cas de doute, refuse ou écris-lui avant d\'accepter.</div>':'')+'<div class="hint">✅ Accepter · ❌ Refuser</div>':''}${accS?`<div class="hint" style="margin-top:6px">💶 ${ip?'Tu as récupéré':'Tu récupères'} <b>${eur(t.price*accS)}</b> (${nPl(accS)} confirmée${accS>1?'s':''})</div>`:''}</div>` : '')); }
       ); return ip?pastBox(h,lst.length):h; }).join('') + ((mt.data||[]).length ? '' : `<div class="empty">Aucun trajet proposé.<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`);
     v.innerHTML = mode==='driver' ? driverHTML : passengerHTML;
     if((notif.new_bookings||notif.responses) && !(mode==='passenger'&&notif.new_bookings) && !(mode==='driver'&&notif.responses)){ await sb.rpc('mark_mine_seen'); if(me) me.mine_seen_at=new Date().toISOString(); refreshNotif(); }
@@ -496,6 +499,7 @@ async function render(){
         <div><label class="btn small sec" style="display:inline-block;margin:0">📷 ${me?.avatar_url?'Changer':'Ajouter'} ma photo<input type="file" id="pav" accept="image/*" style="display:none"></label>
         ${me?.avatar_url?'<br><button class="link" onclick="removeAvatar()">Retirer la photo</button>':'<div class="hint" style="margin-top:4px">Facultatif, rassure les passagers.</div>'}</div></div>
       <label>Prénom</label><input id="pfn" value="${esc(me?.first_name)}">
+      <label>Je suis</label><select id="psex"><option value="">Je préfère ne pas le dire</option><option value="F" ${me?.sex==='F'?'selected':''}>Une femme</option><option value="M" ${me?.sex==='M'?'selected':''}>Un homme</option></select><div class="hint" style="margin-top:4px">Visible uniquement par toi. Nécessaire pour proposer ou réserver un trajet ♀ réservé aux femmes.</div>
       <label>Ma présentation (facultatif)</label><textarea id="pbio" maxlength="160" rows="2" placeholder="Ex : je vais à Vernon tous les jours pour le train de 7h15, ponctuel et sympa">${esc(me?.bio||'')}</textarea>
       <label>Ton identifiant PayPal.me (conducteurs, facultatif)</label><input id="ppp" value="${esc(me?.paypal_me||'')}" placeholder="ex : YussJean" autocapitalize="off">
       <div class="hint">Tes passagers acceptés pourront te payer par carte via PayPal. Crée ton lien gratuit sur paypal.me.</div>
@@ -529,7 +533,7 @@ async function render(){
   }
 }
 
-const LEGAL_UPDATED = '8 novembre 2026';
+const LEGAL_UPDATED = '27 novembre 2026';
 const LEGAL = {
 mentions: `<h2>Mentions légales</h2>
 <h4>Éditeur</h4>
@@ -557,6 +561,7 @@ cgu: `<h2>Conditions générales d'utilisation</h2>
 <li>la participation demandée aux passagers ne doit pas dépasser leur part des frais réels du trajet (carburant, péage, usure). L'application plafonne automatiquement le prix au barème kilométrique fiscal divisé par le nombre d'occupants ;</li>
 <li>chaque conducteur est limité à 4 trajets publiés par jour.</li></ul>
 <p>Covoit' Andelys n'est pas un transporteur : le trajet est réalisé sous la seule responsabilité du conducteur et des passagers.</p>
+<p><b>Trajets « réservés aux femmes »</b> : cette option repose sur une information déclarée par chaque membre dans son profil. Covoit' Andelys ne peut pas en garantir l'exactitude. La conductrice reste libre d'accepter ou de refuser chaque demande. Toute fausse déclaration entraîne la suppression du compte.</p>
 <h4>3. Compte</h4>
 <p>L'inscription est gratuite et réservée aux personnes majeures. Un mineur ne peut pas voyager seul : il peut uniquement voyager <b>accompagné d'un adulte</b> qui réserve pour lui, en est responsable pendant tout le trajet et fournit le siège auto ou rehausseur adapté. Les informations fournies doivent être exactes. Chacun est responsable de la confidentialité de son mot de passe et de l'usage fait de son compte.</p>
 <h4>4. Engagements du conducteur</h4>
@@ -663,7 +668,7 @@ function openTrip(id){
     <div id="drev"></div>
     ${t._ret?`<div class="hint" style="color:var(--g);font-weight:700">↩️ Retour possible le même jour à ${t._ret} avec ${esc(t.driver?.first_name||'ce conducteur')} : réserve-le aussi dans la liste.</div>`:''}
     ${t.driver?.verified?'':`<label style="display:flex;align-items:flex-start;gap:10px;color:var(--t);font-size:14px;margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:12px"><input type="checkbox" id="back" style="width:22px;height:22px;flex:none;margin-top:1px"> <span>⚠️ ${ACK_TXT}</span></label>`}
-    <button class="btn" id="bgo" onclick="book('${id}')">${t.instant?'⚡ Réserver':'Demander une place'}</button><button class="btn sec" onclick="shareTrip('${id}')">🔗 Partager ce trajet</button><button class="btn sec" onclick="closeSheet()">Fermer</button>`}`);
+    ${t.women_only&&me?.sex!=='F'?`<div class="note warn">♀ <b>Trajet réservé aux femmes.</b> ${me?'Pour le réserver, indique « Je suis : une femme » dans ton profil.':''}</div>`:`<button class="btn" id="bgo" onclick="book('${id}')">${t.instant?'⚡ Réserver':'Demander une place'}</button>`}<button class="btn sec" onclick="shareTrip('${id}')">🔗 Partager ce trajet</button><button class="btn sec" onclick="closeSheet()">Fermer</button>`}`);
   if(t.meet_lat) showMeetMap('tmap', t);
   sb.rpc('driver_stats',{d:t.driver_id}).then(({data})=>{ const el=$('#dstats'); if(!el||!data) return;
     el.textContent=`${sinceText(data.since||t.driver?.created_at)} · ${data.trips} trajet${data.trips>1?'s':''} effectué${data.trips>1?'s':''} · ${data.passengers} passager${data.passengers>1?'s':''}`; });
@@ -705,7 +710,7 @@ function editTrip(id){ const t=(window._myTrips||[]).find(x=>x.id===id); if(!t) 
   const dS=`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`, hS=`${p2(d.getHours())}:${p2(d.getMinutes())}`;
   const act=t.bookings.filter(b=>b.status!=='refused'), card=act.some(b=>b.paid||['held','captured','problem'].includes(b.pay_state));
   const mps=MEETPOINTS.filter(x=>x.cities.includes(t.from_place));
-  const tg=(id,on,l)=>`<button type="button" class="chip ${on?'on':''}" id="${id}" onclick="this.classList.toggle('on')">${l}</button>`;
+  const tg=(id,on,l)=>`<button type="button" class="chip ${on?'on':''}" id="${id}" onclick="${id==='ed_w'?"womenChip(this,'ed_i')":id==='ed_i'?"if(!$('#ed_w')?.classList.contains('on'))this.classList.toggle('on');else toast('Un trajet réservé aux femmes est toujours validé par la conductrice')":"this.classList.toggle('on')"}">${l}</button>`;
   window._ed={t, mp:t.meeting_point||'', lat:t.meet_lat, lng:t.meet_lng};
   sheet(`<h2>✏️ Modifier le trajet</h2><div class="hint">${esc(t.from_place)} → ${esc(t.to_place)} · le départ et l'arrivée ne se modifient pas (supprime et republie si besoin).</div>
     ${act.length?`<div class="note">👥 ${act.length} passager${act.length>1?'s ont':' a'} déjà réservé : ${card?'un paiement par carte est en cours, le <b>prix est bloqué</b>.':'le prix peut seulement <b>baisser</b>.'} Ils seront prévenus si l'heure, le prix ou le point de rendez-vous changent.</div>`:''}
@@ -923,6 +928,7 @@ async function saveName(){const fn=$('#pfn').value.trim();if(!fn)return;
   const {error}=await sb.from('profiles').update({first_name:fn,paypal_me:pp,accepts_cash:cash,car_model,car_color,bio,fuel_type,car_size}).eq('id',user.id);
   if(error)return toast(errMsg(error));
   const r2=await sb.from('driver_private').upsert({user_id:user.id,car_plate:plate}); if(r2.error)return toast(errMsg(r2.error));
+  const sx=$('#psex')?.value||null; if(sx!==(me?.sex||null)){ const r3=await sb.from('profile_private').upsert({id:user.id,sex:sx,updated_at:new Date().toISOString()}); if(r3.error)return toast(errMsg(r3.error)); me.sex=sx; }
   Object.assign(me,{first_name:fn,paypal_me:pp,accepts_cash:cash,car_model,car_color,bio,fuel_type,car_size});$('#ppp').value=pp||'';$('#pcp').value=plate||'';toast('Profil enregistré');}
 function resizeImage(file, size=320){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');const s=Math.min(img.width,img.height);c.width=c.height=size;
   c.getContext('2d').drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,size,size);c.toBlob(b=>b?res(b):rej(new Error('Image illisible')),'image/jpeg',0.85);URL.revokeObjectURL(img.src);};
@@ -1476,6 +1482,9 @@ const MEETPOINTS = [
 const meetOf = mp => MEETPOINTS.find(x=>mp && mp.startsWith(x.name));
 const partnerOf = mp => meetOf(mp)?.partner;
 const offerOf = mp => { const x=meetOf(mp); return x&&x.partner&&x.offer?x:null; };
+function sheetLess(html){ let n=$('#wonote'); if(!n){ n=document.createElement('div'); n.id='wonote'; n.className='note'; n.style.marginTop='8px'; const c=$('#ow')||$('#ed_w'); c?.parentElement?.after(n); } n.innerHTML=html; }
+function womenChip(el,instId){ if(!el.classList.contains('on') && me?.sex!=='F') return toast('Indique « Je suis : une femme » dans ton profil pour proposer un trajet réservé aux femmes');
+  el.classList.toggle('on'); if(!el.classList.contains('on')) $('#wonote')?.remove(); if(el.classList.contains('on')){ $('#'+instId)?.classList.remove('on'); sheetLess('♀ <b>Trajet réservé aux femmes</b> : le sexe est déclaré par chaque membre et n\'est pas vérifié par Covoit\' Andelys. Avant d\'accepter une demande, vérifie le prénom et la photo. En cas de doute, refuse.'); } }
 const offerHint = x => x&&x.partner&&x.offer?`<div class="note" style="margin-top:8px">☕ <b>Offre partenaire</b> : ${esc(x.offer)} pour toi et tes passagers, le jour du trajet${x.offerFrom?', dès '+esc(x.offerFrom):''}.</div>`:'';
 const sameDay = d => new Date(d).toDateString()===new Date().toDateString();
 // Coupon offre partenaire : seulement le jour du trajet, pour le conducteur (avec au moins un passager accepté) et les passagers acceptés

@@ -212,7 +212,7 @@ function addEyes(root){ (root||document).querySelectorAll('input[type=password]:
 new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:true,subtree:true});
 function sheet(html){ if($('#bg').style.display!=='flex' && $('#adm')?.style.display==='block') navPush(); $('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 // Mise à jour automatique : au retour dans l'appli, recharge si une nouvelle version est en ligne (jamais pendant une saisie ou une fenêtre ouverte)
-const APP_V='2026-11-27k'; let _vChk=0;
+const APP_V='2026-11-27l'; let _vChk=0;
 async function checkUpdate(){ if(!/^https?:/.test(location.protocol)||Date.now()-_vChk<3e5) return; _vChk=Date.now();
   try{ const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const m=/const APP_V='([^']+)'/.exec(await r.text());
     if(!m||m[1]===APP_V) return; const busy=$('#bg').style.display==='flex'||$('#adm')?.style.display==='block'||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'');
@@ -304,7 +304,7 @@ function tripCard(t, actions){
    <div class="hint" style="font-weight:700;color:${left>0?'var(--g)':'#b91c1c'}">${seatsText(left,t.seats)}</div>
    ${t.note?`<div class="hint">💬 ${esc(t.note)}</div>`:''}
    <div class="meta"><div class="drv">${av(name, t.driver?.avatar_url)}<div>${esc(name)}${stars(t.driver)}${badge(t.driver)||(t.driver&&t.driver.first_name?'<span class="tag" style="background:#f3f4f6;color:#6b7280">Profil non vérifié</span>':'')}${t.women_only?'<span class="tag t-w">Entre femmes</span>':''}${t.instant?'<span class="tag t-ok">⚡ Réservation immédiate</span>':''}${soonText(d)?`<span class="tag new">⏱ ${soonText(d)}</span>`:''}${t.driver?.created_at?`<br><small style="color:var(--m)">${sinceText(t.driver.created_at)}</small>`:''}</div></div>
-   <div class="acts">${actions ?? (d<new Date()?'<span style="color:var(--m)">Parti</span>':left>0?`<button class="btn small" onclick="openTrip('${t.id}')">Réserver</button>`:'<span style="color:var(--m)">Complet</span>')}</div></div></div>`;
+   <div class="acts">${actions ?? (d<new Date()?'<span class="tag" style="background:#e5e7eb;color:#374151;font-size:13px">🕒 Parti</span>':left>0?`<button class="btn small" onclick="openTrip('${t.id}')">Réserver</button>`:'<span style="color:var(--m)">Complet</span>')}</div></div></div>`;
 }
 
 let tripsCache = [];
@@ -341,7 +341,7 @@ async function render(){
      <div id="list"><div class="empty">Chargement des trajets…</div></div>`;
     wirePlace('ff',v=>{filter={...filter,from:v};render();}); wirePlace('ft',v=>{filter={...filter,to:v};render();});
     $('#fd').onchange=()=>{filter={...filter,date:$('#fd').value};render();};
-    let q = sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type)').gte('depart_at', new Date(Date.now()-15*6e4).toISOString()).order('depart_at').limit(100);
+    let q = sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type)').gte('depart_at', new Date(Date.now()).toISOString()).order('depart_at').limit(100);
     if (filter.from) q = q.eq('from_place', filter.from);
     if (filter.to) q = q.eq('to_place', filter.to);
     if (filter.date){ const s=new Date(filter.date+'T00:00'); q = q.gte('depart_at', s.toISOString()).lt('depart_at', new Date(s.getTime()+864e5).toISOString()); }
@@ -368,11 +368,12 @@ async function render(){
     if (rid!==RID) return;
     if(filter.from||filter.to){ const k=[filter.from,filter.to,filter.date,filter.period].join('|'); window._logged=window._logged||new Set();
       if(!window._logged.has(k)){ window._logged.add(k); sb.rpc('log_search',{p_from:filter.from||'',p_to:filter.to||'',p_date:filter.date||null,p_period:filter.date?'date':filter.period,p_results:data.length}).then(()=>{},()=>{}); } }
-    $('#list').innerHTML = `<h3 style="margin:16px 4px 8px">${data.length} trajet${data.length>1?'s':''}</h3>` +
-      (data.map((t,i)=>(i===0||dayLong(data[i-1].depart_at)!==dayLong(t.depart_at)?`<div class="dayh st">${dayLong(t.depart_at)}</div>`:'')+tripCard(t, user && t.driver_id===user.id ? '<span style="color:var(--m)">Ton trajet</span>' : undefined).replace('<div class="meta">',others[t.id]?`<div class="hint" style="font-weight:700">🔁 Trajet régulier : aussi ${others[t.id]} autre${others[t.id]>1?'s':''} date${others[t.id]>1?'s':''} à la même heure</div><div class="meta">`:'<div class="meta">')).join('') ||
+    $('#list').innerHTML = `<div id="toproutes"></div><h3 style="margin:16px 4px 8px" id="ncount">${data.length} trajet${data.length>1?'s':''}</h3><div id="gone"></div>` +
+      (data.map((t,i)=>(i===0||dayLong(data[i-1].depart_at)!==dayLong(t.depart_at)?`<div class="dayh st">${dayLong(t.depart_at)}</div>`:'')+`<div class="sres" data-dep="${t.depart_at}">`+tripCard(t, user && t.driver_id===user.id ? '<span style="color:var(--m)">Ton trajet</span>' : undefined).replace('<div class="meta">',others[t.id]?`<div class="hint" style="font-weight:700">🔁 Trajet régulier : aussi ${others[t.id]} autre${others[t.id]>1?'s':''} date${others[t.id]>1?'s':''} à la même heure</div><div class="meta">`:'<div class="meta">')+'</div>').join('') ||
        `<div class="empty">Aucun trajet ${filter.period!=='all'&&!filter.date?'sur cette période':'pour l\'instant'}.${filter.period!=='all'&&!filter.date?`<br><button class="link" onclick="filter.period='all';render()">Voir tous les trajets à venir</button>`:''}${filter.from&&filter.to?'<div id="sdem"></div>':''}<br><br><button class="btn sec" onclick="go('offer')">Proposer un trajet</button></div>`) +
       `<button class="link" style="display:block;margin:14px auto 0" onclick="openFAQ()">❓ Questions fréquentes : légal, assurance, prix, installation…</button><button class="btn sec" style="margin-top:12px" onclick="openAlert()">🔔 Me prévenir des nouveaux trajets${filter.from||filter.to?` ${esc(filter.from||'Partout')} → ${esc(filter.to||'Partout')}`:''}</button>`;
     if(!data.length && filter.from && filter.to) routeHint(filter.from, filter.to, 'sdem', 'search');
+    searchExtras(rid);
   }
 
   if (tab==='offer'){
@@ -1489,6 +1490,22 @@ const offerOf = mp => { const x=meetOf(mp); return x&&x.partner&&x.offer?x:null;
 function sheetLess(html){ let n=$('#wonote'); if(!n){ n=document.createElement('div'); n.id='wonote'; n.className='note'; n.style.marginTop='8px'; const c=$('#ow')||$('#ed_w'); c?.parentElement?.after(n); } n.innerHTML=html; }
 function womenChip(el,instId){ if(!el.classList.contains('on') && me?.sex!=='F') return toast('Indique « Je suis : une femme » dans ton profil pour proposer un trajet réservé aux femmes');
   el.classList.toggle('on'); if(!el.classList.contains('on')) $('#wonote')?.remove(); if(el.classList.contains('on')){ $('#'+instId)?.classList.remove('on'); sheetLess('♀ <b>Trajet réservé aux femmes</b> : le sexe est déclaré par chaque membre et n\'est pas vérifié par Covoit\' Andelys. Avant d\'accepter une demande, vérifie le prénom et la photo. En cas de doute, refuse.'); } }
+// Recherche : trajets déjà partis aujourd'hui (preuve que ça roule) + routes fréquentes + retrait des trajets partis
+async function searchExtras(rid){ try{
+  const d0=new Date(); d0.setHours(0,0,0,0);
+  let q=sb.from('trips').select('id',{count:'exact',head:true}).gte('depart_at',d0.toISOString()).lt('depart_at',new Date().toISOString());
+  if(filter.from) q=q.eq('from_place',filter.from); if(filter.to) q=q.eq('to_place',filter.to);
+  const {count}=await q; if(rid!==RID) return; const g=$('#gone');
+  if(g && count>0) g.innerHTML=`<div class="hint" style="margin:-4px 4px 8px">🚗 Aujourd'hui, ${count} trajet${count>1?'s sont':' est'} déjà parti${count>1?'s':''}${filter.from&&filter.to?' sur cette route':''}</div>`;
+  if(!filter.from && !filter.to && !filter.date){
+    const {data:r}=await sb.from('trips').select('from_place,to_place').gte('depart_at',new Date().toISOString()).limit(400); if(rid!==RID||!r) return;
+    const c={}; r.forEach(x=>{ const k=x.from_place+'|'+x.to_place; c[k]=(c[k]||0)+1; });
+    const top=Object.entries(c).filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).slice(0,3); const el=$('#toproutes');
+    if(el && top.length) el.innerHTML=`<div class="hint" style="margin:14px 4px 6px;font-weight:700">🔥 Trajets fréquents</div><div class="chips">${top.map(([k,n])=>{ const [a,b]=k.split('|'); return `<button class="chip" onclick="filter={...filter,from:'${jsq(a)}',to:'${jsq(b)}',period:'all'};render()">${esc(a)} → ${esc(b)} (${n})</button>`; }).join('')}</div>`; }
+}catch(e){} }
+setInterval(()=>{ if(document.hidden) return; let n=0; document.querySelectorAll('.sres').forEach(el=>{ if(new Date(el.dataset.dep)<new Date()){ el.remove(); n++; } });
+  if(!n) return; document.querySelectorAll('#list .dayh').forEach(h=>{ if(!h.nextElementSibling?.classList.contains('sres')) h.remove(); });
+  const c=document.querySelectorAll('.sres').length, el=$('#ncount'); if(el) el.textContent=c+' trajet'+(c>1?'s':''); },30000);
 const offerHint = x => x&&x.partner&&x.offer?`<div class="note" style="margin-top:8px">☕ <b>Offre partenaire</b> : ${esc(x.offer)} pour toi et tes passagers, le jour du trajet${x.offerFrom?', dès '+esc(x.offerFrom):''}.</div>`:'';
 const sameDay = d => new Date(d).toDateString()===new Date().toDateString();
 // Coupon offre partenaire : seulement le jour du trajet, pour le conducteur (avec au moins un passager accepté) et les passagers acceptés

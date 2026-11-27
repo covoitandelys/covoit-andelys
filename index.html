@@ -211,6 +211,14 @@ function addEyes(root){ (root||document).querySelectorAll('input[type=password]:
   w.appendChild(b); }); }
 new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:true,subtree:true});
 function sheet(html){ if($('#bg').style.display!=='flex' && $('#adm')?.style.display==='block') navPush(); $('#sheet').innerHTML=html;$('#bg').style.display='flex';}
+// Mise à jour automatique : au retour dans l'appli, recharge si une nouvelle version est en ligne (jamais pendant une saisie ou une fenêtre ouverte)
+const APP_V='2026-11-27a'; let _vChk=0;
+async function checkUpdate(){ if(!/^https?:/.test(location.protocol)||Date.now()-_vChk<3e5) return; _vChk=Date.now();
+  try{ const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const m=/const APP_V='([^']+)'/.exec(await r.text());
+    if(!m||m[1]===APP_V) return; const busy=$('#bg').style.display==='flex'||$('#adm')?.style.display==='block'||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'');
+    if(busy){ _vChk=0; return; } location.reload(); }catch(e){} }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') checkUpdate(); });
+setTimeout(checkUpdate,8e3);
 function closeSheet(){const wasChat=!!chatTimer;$('#bg').style.display='none';clearInterval(chatTimer);chatTimer=null;if(wasChat&&tab==='mine')render();}
 $('#bg').onclick = e => { if (e.target.id==='bg') closeSheet(); };
 function errMsg(e){const m=((e&&e.message)||'').replace(/(^|\D)([01]) place\(s\) réservée\(s\)/g,'$1$2 place réservée').replace(/(\d+) place\(s\) réservée\(s\)/g,'$1 places réservées').replace(/(^|\D)([01]) place\(s\)/g,'$1$2 place').replace(/(\d+) place\(s\)/g,'$1 places');

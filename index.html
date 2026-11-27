@@ -212,7 +212,7 @@ function addEyes(root){ (root||document).querySelectorAll('input[type=password]:
 new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:true,subtree:true});
 function sheet(html){ if($('#bg').style.display!=='flex' && $('#adm')?.style.display==='block') navPush(); $('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 // Mise à jour automatique : au retour dans l'appli, recharge si une nouvelle version est en ligne (jamais pendant une saisie ou une fenêtre ouverte)
-const APP_V='2026-11-27c'; let _vChk=0;
+const APP_V='2026-11-27d'; let _vChk=0;
 async function checkUpdate(){ if(!/^https?:/.test(location.protocol)||Date.now()-_vChk<3e5) return; _vChk=Date.now();
   try{ const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const m=/const APP_V='([^']+)'/.exec(await r.text());
     if(!m||m[1]===APP_V) return; const busy=$('#bg').style.display==='flex'||$('#adm')?.style.display==='block'||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'');
@@ -713,13 +713,13 @@ function editTrip(id){ const t=(window._myTrips||[]).find(x=>x.id===id); if(!t) 
     <div class="row"><div><label>Places</label><select id="ed_s">${[1,2,3,4].filter(n=>n>=t.booked).map(n=>`<option ${n===t.seats?'selected':''}>${n}</option>`).join('')}</select></div>
       <div><label>Prix / place (€)</label><input type="number" id="ed_p" step="0.5" min="0" value="${t.price}" ${card?'disabled':''}></div></div>
     <label>Point de rendez-vous</label>
-    ${mps.length?`<div class="chips" id="ed_mpc">${mps.map((x,i)=>`<button type="button" class="chip ${t.meeting_point&&t.meeting_point.startsWith(x.name)?'on':''}" onclick="_edMp(${MEETPOINTS.indexOf(x)},this)">${esc(x.name)}</button>`).join('')}</div>`:''}
-    <input id="ed_mp" maxlength="120" value="${esc(t.meeting_point||'')}" placeholder="Ex : parking de la gare" oninput="_ed.lat=null;_ed.lng=null;document.querySelectorAll('#ed_mpc .chip').forEach(c=>c.classList.remove('on'))">
+    ${mps.length?`<div class="chips" id="ed_mpc">${mps.map((x,i)=>`<button type="button" class="chip ${t.meeting_point&&t.meeting_point.startsWith(x.name)?'on':''}" onclick="_edMp(${MEETPOINTS.indexOf(x)},this)">${esc(x.name)}${x.offer?' ☕':''}</button>`).join('')}</div>`:''}<div id="ed_off">${offerHint(meetOf(t.meeting_point||''))}</div>
+    <input id="ed_mp" maxlength="120" value="${esc(t.meeting_point||'')}" placeholder="Ex : parking de la gare" oninput="if($('#ed_off'))$('#ed_off').innerHTML='';_ed.lat=null;_ed.lng=null;document.querySelectorAll('#ed_mpc .chip').forEach(c=>c.classList.remove('on'))">
     <label>Message (facultatif)</label><input id="ed_n" maxlength="200" value="${esc(t.note||'')}">
     <label>Bagages</label><select id="ed_lg">${[['none','🚫 Pas de bagage'],['small','🎒 Petit bagage (sac, cabas)'],['large','🧳 Valise acceptée']].map(([v,l])=>`<option value="${v}" ${(t.luggage||'small')===v?'selected':''}>${l}</option>`).join('')}</select>
     <div class="chips" style="margin-top:8px">${tg('ed_w',t.women_only,'♀ Réservé aux femmes')}${tg('ed_i',t.instant,'⚡ Réservation instantanée')}${tg('ed_pt',t.pets,'🐾 Animaux acceptés')}${tg('ed_m2',t.max2_back,'💺 Max 2 à l\'arrière')}</div>
     <button class="btn" style="margin-top:12px" onclick="saveTrip(this)">Enregistrer</button><button class="btn sec" onclick="closeSheet()">Annuler</button>`); }
-function _edMp(i,el){ const x=MEETPOINTS[i]; $('#ed_mp').value=x.name; _ed.lat=x.lat; _ed.lng=x.lng; document.querySelectorAll('#ed_mpc .chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); }
+function _edMp(i,el){ const x=MEETPOINTS[i]; $('#ed_mp').value=x.name; _ed.lat=x.lat; _ed.lng=x.lng; document.querySelectorAll('#ed_mpc .chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); if($('#ed_off')) $('#ed_off').innerHTML=offerHint(x); }
 async function saveTrip(btn){ const t=_ed.t, dep=new Date(`${$('#ed_d').value}T${$('#ed_h').value}`), s=+$('#ed_s').value, price=Math.max(0,+$('#ed_p').value||0);
   if(isNaN(dep)) return toast('Date ou heure invalide'); if(dep<=new Date()) return toast('L\'heure de départ est déjà passée');
   if(price>maxPrice(t.from_place,t.to_place,s)) return toast('Maximum légal : '+eur(maxPrice(t.from_place,t.to_place,s))+' par passager');
@@ -1476,6 +1476,7 @@ const MEETPOINTS = [
 const meetOf = mp => MEETPOINTS.find(x=>mp && mp.startsWith(x.name));
 const partnerOf = mp => meetOf(mp)?.partner;
 const offerOf = mp => { const x=meetOf(mp); return x&&x.partner&&x.offer?x:null; };
+const offerHint = x => x&&x.partner&&x.offer?`<div class="note" style="margin-top:8px">☕ <b>Offre partenaire</b> : ${esc(x.offer)} pour toi et tes passagers, le jour du trajet${x.offerFrom?', dès '+esc(x.offerFrom):''}.</div>`:'';
 const sameDay = d => new Date(d).toDateString()===new Date().toDateString();
 // Coupon offre partenaire : seulement le jour du trajet, pour le conducteur (avec au moins un passager accepté) et les passagers acceptés
 window._cp={};
@@ -1505,7 +1506,7 @@ function otherMeet(){ if(meetOf($('#omp').value)){ $('#omp').value=''; meetPick=
 function meetChips(){ const el=$('#opart'); if(!el) return; const city=$('#of')?.value||'';
   const L=MEETPOINTS.map((x,i)=>[x,i]).filter(([x])=>x.cities.includes(city)).sort((a,b)=>(b[0].partner?2:0)+(b[0].park?1:0)-(a[0].partner?2:0)-(a[0].park?1:0)).slice(0,3);
   const cur=meetOf($('#omp')?.value||''); if(cur && !L.some(([x])=>x===cur)){ $('#omp').value=''; meetPick=null; meetBtn(); }
-  el.innerHTML = L.length ? `<div class="hint" style="margin-top:8px">Points de rendez-vous conseillés :</div><div class="chips">${L.map(([x,i])=>`<button class="chip${meetOf($('#omp').value)===x?' on':''}" type="button" onclick="pickMeet(${i})">${x.park?'🅿️':'📍'} ${esc(x.name)}${x.partner?' 🤝':''}</button>`).join('')}<button class="chip" type="button" onclick="otherMeet()">✏️ Autre lieu</button></div><small class="hint">🅿️ parking gratuit : on peut y laisser sa voiture · 📍 arrêt minute : juste pour monter ou descendre</small>` : ''; }
+  el.innerHTML = L.length ? `<div class="hint" style="margin-top:8px">Points de rendez-vous conseillés :</div><div class="chips">${L.map(([x,i])=>`<button class="chip${meetOf($('#omp').value)===x?' on':''}" type="button" onclick="pickMeet(${i})">${x.park?'🅿️':'📍'} ${esc(x.name)}${x.partner?' 🤝':''}${x.offer?' ☕':''}</button>`).join('')}<button class="chip" type="button" onclick="otherMeet()">✏️ Autre lieu</button></div>${offerHint(meetOf($('#omp').value))}<small class="hint">🅿️ parking gratuit : on peut y laisser sa voiture · 📍 arrêt minute : juste pour monter ou descendre</small>` : ''; }
 const gmapsUrl = t => t.meet_lat ? `https://www.google.com/maps/dir/?api=1&destination=${t.meet_lat},${t.meet_lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(t.meeting_point+', '+t.from_place)}`;
 const wazeUrl = t => t.meet_lat ? `https://waze.com/ul?ll=${t.meet_lat},${t.meet_lng}&navigate=yes` : `https://waze.com/ul?q=${encodeURIComponent(t.meeting_point+' '+t.from_place)}&navigate=yes`;
 const appleUrl = t => t.meet_lat ? `https://maps.apple.com/?daddr=${t.meet_lat},${t.meet_lng}` : `https://maps.apple.com/?daddr=${encodeURIComponent(t.meeting_point+', '+t.from_place)}`;

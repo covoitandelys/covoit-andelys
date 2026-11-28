@@ -9,6 +9,15 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
 <title>Covoit' Andelys</title>
+<meta name="description" content="Covoiturage courte distance aux Andelys et alentours : Vernon, Gaillon, Louviers, Évreux… Partagez vos frais, inscription gratuite.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Covoit' Andelys">
+<meta property="og:title" content="Covoit' Andelys – le covoiturage local">
+<meta property="og:description" content="Trajets du quotidien aux Andelys et alentours : Vernon, Gaillon, Louviers, Évreux… Partagez vos frais, inscription gratuite.">
+<meta property="og:url" content="https://covoit-andelys.fr/">
+<meta property="og:image" content="https://covoit-andelys.fr/icon-512.png">
+<meta property="og:image:width" content="512"><meta property="og:image:height" content="512">
+<meta property="og:locale" content="fr_FR">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -212,7 +221,7 @@ function addEyes(root){ (root||document).querySelectorAll('input[type=password]:
 new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:true,subtree:true});
 function sheet(html){ if($('#bg').style.display!=='flex' && $('#adm')?.style.display==='block') navPush(); $('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 // Mise à jour automatique : au retour dans l'appli, recharge si une nouvelle version est en ligne (jamais pendant une saisie ou une fenêtre ouverte)
-const APP_V='2026-11-27l'; let _vChk=0;
+const APP_V='2026-11-28b'; let _vChk=0;
 async function checkUpdate(){ if(!/^https?:/.test(location.protocol)||Date.now()-_vChk<3e5) return; _vChk=Date.now();
   try{ const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const m=/const APP_V='([^']+)'/.exec(await r.text());
     if(!m||m[1]===APP_V) return; const busy=$('#bg').style.display==='flex'||$('#adm')?.style.display==='block'||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'');
@@ -491,6 +500,7 @@ async function render(){
         const r = login ? await sb.auth.signInWithPassword({email,password}) : await sb.auth.signUp({email,password,options:{data:{first_name:fn,cgu_accepted_at:new Date().toISOString(),cgu_version:LEGAL_UPDATED}}});
         $('#ago').disabled=false; delete $('#ago').dataset.ok;
         if(r.error){ if(login && /not confirmed/i.test(r.error.message||'')) return checkMailSheet(email, true); return toast(errMsg(r.error)); }
+        if(!login) logShare('signup');
         if(!r.data.session){ checkMailSheet(email); return; }
         await loadMe(); toast(login?'Connecté ✅':'Bienvenue '+fn+' 🎉'); render(); maybeWelcome(); setTimeout(resumeNext, 700);};
       return;
@@ -522,6 +532,7 @@ async function render(){
         <button class="btn sec" id="ibtn" onclick="installApp()">📲 Installer l'appli sur mon téléphone</button>
         <label style="display:flex;align-items:flex-start;gap:10px;color:var(--t);font-size:15px;margin-top:12px"><input type="checkbox" id="nfeed" style="width:22px;height:22px;flex:none;margin-top:1px" ${feedOn()?'checked':''} onchange="setFeed(this)"> <span><b>Bulles d'activité</b><br><small style="color:var(--m)">Petits messages dans l'appli : nouveaux trajets, départs imminents vers les gares, nouveaux membres.</small></span></label>
         <button class="btn sec small" style="margin-top:12px" onclick="openStats()">📊 Mon historique et mes frais partagés</button>
+        <button class="btn sec small" style="margin-top:8px" onclick="inviteFriend()">📣 Inviter un ami</button>
         <h3 style="margin-top:16px">Mes alertes trajet</h3><div id="alerts"><div class="hint">Chargement…</div></div>
         <button class="btn sec small" onclick="openAlert()">+ Nouvelle alerte</button></div>
       <div class="card"><h3>💳 Paiement par carte</h3>${me?.stripe_ready
@@ -689,7 +700,7 @@ let bookInstant=false;
 async function book(id){ const tt=tripsCache.find(x=>x.id===id); const unv=!tt?.driver?.verified;
   if(unv && !$('#back')?.checked) return toast('Coche la case de mise en garde pour réserver');
   $('#bgo').disabled=true;const {error}=await sb.from('bookings').insert({trip_id:id,seats:+$('#bn').value,children:+($('#bk')?.value||0),...(unv?{ack_v:ACK_V}:{})});
-  if(error){$('#bgo').disabled=false; toast(errMsg(error)); if(/plus disponible/.test(errMsg(error))){ closeSheet(); render(); } return;} closeSheet(); toast(bookInstant?'Place réservée ✅':'Demande envoyée ⏳ Le conducteur va te répondre'); go('mine');
+  if(error){$('#bgo').disabled=false; toast(errMsg(error)); if(/plus disponible/.test(errMsg(error))){ closeSheet(); render(); } return;} logShare('booking'); closeSheet(); toast(bookInstant?'Place réservée ✅':'Demande envoyée ⏳ Le conducteur va te répondre'); go('mine');
   if(!fbAsked()) setTimeout(()=>sheet(`<h2>Merci ! 🙏</h2><div class="hint">Covoit' Andelys grandit grâce au bouche-à-oreille. Suis notre page Facebook et partage-la à tes voisins et collègues : plus on est nombreux, plus il y a de trajets.</div>${fbButton()}<button class="btn sec" onclick="try{localStorage.setItem('covoit_fb','later')}catch(e){};closeSheet()">Plus tard</button>`),1500);}
 async function respond(id, ok, reason){ if(!ok && reason===undefined) return refuseSheet(id);
   const {error}=await sb.rpc('respond_booking',{b:id,accept:ok,reason:ok?null:(reason||null)}); if(error)return toast(errMsg(error)); closeSheet(); toast(ok?'Passager accepté ✅':'Demande refusée'); render();}
@@ -800,16 +811,32 @@ async function docView(uid, i=0){
   }catch(e){ b.innerHTML=`<div class="hint" style="color:#ccc">PDF illisible ici. <a href="${esc(d.u)}" target="_blank" rel="noopener" style="color:#5eead4">Ouvrir à part</a></div>`; } }
 // ---- Liens directs et partage
 const SITE='https://covoit-andelys.fr/';
-const tripUrl=id=>`${SITE}?t=${id}`, routeUrl=(a,b)=>`${SITE}?de=${encodeURIComponent(a||'')}&vers=${encodeURIComponent(b||'')}`;
+const tripUrl=(id,src)=>`${SITE}?t=${id}${src?'&s='+src:''}`, routeUrl=(a,b,src)=>`${SITE}?de=${encodeURIComponent(a||'')}&vers=${encodeURIComponent(b||'')}${src?'&s='+src:''}`;
+// Suivi des partages : d'où vient le visiteur (m = membre, a = admin, i = invitation)
+const VID=(()=>{ try{ let v=localStorage.getItem('vid'); if(!v){ v=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('vid',v); } return v; }catch(e){ return 'x'+Date.now(); } })();
+const shareSrc=()=>{ try{ const o=JSON.parse(localStorage.getItem('ssrc')||'null'); return o&&Date.now()-o.at<30*864e5?o.s:null; }catch(e){ return null; } };
+function logShare(ev,src){ src=src||shareSrc(); if(!src||!configured) return; sb.rpc('log_share',{p_src:src,p_ev:ev,p_vid:VID}).then(()=>{},()=>{}); }
 async function getTrip(id){ let t=tripsCache.find(x=>x.id===id); if(t) return t;
   const {data}=await sb.from('trips').select('*, driver:profiles!trips_driver_id_fkey(first_name,verified,paypal_me,accepts_cash,stripe_ready,car_model,car_color,avatar_url,bio,rating_avg,rating_count,created_at,fuel_type)').eq('id',id).maybeSingle();
   if(data) tripsCache.push(data); return data; }
 async function shareTrip(id){ const t=await getTrip(id); if(!t) return toast('Trajet introuvable');
-  const d=new Date(t.depart_at), txt=`🚗 Covoiturage ${t.from_place} → ${t.to_place}, ${dateTxt(d)} à ${hm(d)} – ${eur(t.price)} la place. Réservez ici 👇`;
-  try{ if(navigator.share){ await navigator.share({title:"Covoit' Andelys",text:txt,url:tripUrl(id)}); return; } }catch(e){ if(e?.name==='AbortError') return; }
-  try{ await navigator.clipboard.writeText(txt+'\n'+tripUrl(id)); toast('Lien copié ✅ Colle-le dans Facebook ou un mail'); }catch(_){ sheet(`<h2>🔗 Lien du trajet</h2><textarea rows="4" style="width:100%">${esc(txt+'\n'+tripUrl(id))}</textarea><button class="btn sec" onclick="closeSheet()">Fermer</button>`); } }
-async function openLinks(){ const q=new URLSearchParams(location.search); const t=q.get('t'), de=q.get('de'), ve=q.get('vers'), ad=q.get('admin');
-  if(!t&&!de&&!ve&&!ad) return; history.replaceState(null,'',location.pathname);
+  const d=new Date(t.depart_at), left=t.seats-(t.booked||0), url=tripUrl(id,'m'), txt=`🚗 Covoiturage ${t.from_place} → ${t.to_place}, ${dateTxt(d)} à ${hm(d)} – ${eur(t.price)} la place. Réservez ici 👇`;
+  return shareWithImage({k:'trip',de:t.from_place,vers:t.to_place,l1:dateTxt(d).replace(/^./,m=>m.toUpperCase())+' à '+hm(d),l2:`${left} place${left>1?'s':''} · ${eur(t.price)} la place`}, txt, url); }
+function shareNeed(de,vers,quand){ const url=routeUrl(de,vers,'m'), txt=`🙋 Je cherche un covoiturage ${de} → ${vers}${quand?' ('+quand+')':''}. Vous faites ce trajet ? Publiez-le sur Covoit' Andelys, je serai prévenu(e) tout de suite 👇`;
+  return shareWithImage({k:'need',de,vers,l1:quand||'',n:1}, txt, url); }
+function inviteFriend(){ const url=SITE+'?s=i', txt="🚗 J'utilise Covoit' Andelys pour mes trajets autour des Andelys (Vernon, Gaillon, Louviers, Évreux…). Inscris-toi, c'est gratuit 👇";
+  if(navigator.share) return navigator.share({title:"Covoit' Andelys",text:txt,url}).catch(()=>{});
+  navigator.clipboard?.writeText(txt+'\n'+url).then(()=>toast('Lien copié ✅ Envoie-le à un ami'),()=>{}); }
+async function shareWithImage(o,txt,url){ const full=txt+'\n'+url; let copied=false;
+  try{ await navigator.clipboard.writeText(full); copied=true; }catch(e){}
+  try{ const cv=fbDraw(o), b=await new Promise(r=>cv.toBlob(r,'image/png')), f=new File([b],'covoit-andelys.png',{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[f],text:full})){ await navigator.share({files:[f],text:full}); if(copied) toast('Sur Facebook : appui long → Coller pour ajouter le texte'); return; } }catch(e){ if(e?.name==='AbortError') return; }
+  try{ if(navigator.share){ await navigator.share({title:"Covoit' Andelys",text:txt,url}); return; } }catch(e){ if(e?.name==='AbortError') return; }
+  if(copied) toast('Lien copié ✅ Colle-le dans Facebook ou un message');
+  else sheet(`<h2>🔗 Partager</h2><textarea rows="4" style="width:100%">${esc(full)}</textarea><button class="btn sec" onclick="closeSheet()">Fermer</button>`); }
+async function openLinks(){ const q=new URLSearchParams(location.search); const t=q.get('t'), de=q.get('de'), ve=q.get('vers'), ad=q.get('admin'), sr=q.get('s');
+  if(['m','a','i'].includes(sr)){ try{ localStorage.setItem('ssrc',JSON.stringify({s:sr,at:Date.now()})); }catch(e){} logShare('visit',sr); }
+  if(!t&&!de&&!ve&&!ad){ if(sr) history.replaceState(null,'',location.pathname); return; } history.replaceState(null,'',location.pathname);
   if(t){ const tr=await getTrip(t); if(!tr||new Date(tr.depart_at)<new Date()) return toast('Ce trajet n\'est plus disponible'); tab='search'; render(); openTrip(t); return; }
   if(de||ve){ filter={from:de||'', to:ve||'', date:'', period:'all'}; tab='search'; render(); return; }
   if(ad && me?.is_admin){ openAdmin._tab=ad; openAdmin(); } }
@@ -837,13 +864,13 @@ async function openTripFile(id){ sheet('<h2>📋 Fiche trajet</h2><div class="hi
   const T=F.trajet, d=new Date(T.depart), left=T.places-T.reservees, ST={pending:'⏳ en attente',accepted:'✅ acceptée',refused:'❌ refusée'};
   const P=F.passagers||[], I=F.interesses||[], todo=I.filter(x=>!x.reserve&&x.email);
   const ago=x=>{ if(!x) return 'jamais prévenu'; const h=Math.round((Date.now()-new Date(x))/36e5); return 'prévenu '+(h<1?'il y a moins d\'1 h':h<48?`il y a ${h} h`:`le ${new Date(x).toLocaleDateString('fr-FR')}`); };
-  const fb=`🚗 Covoiturage ${T.de} → ${T.vers}\n📅 ${dateTxt(d)} à ${hm(d)}\n👥 ${left} place${left>1?'s':''} disponible${left>1?'s':''} · ${eur(T.prix)} la place\n\nRéservez directement ici 👉 ${tripUrl(T.id)}\n\nL'équipe Covoit' Andelys`;
+  const fb=`🚗 Covoiturage ${T.de} → ${T.vers}\n📅 ${dateTxt(d)} à ${hm(d)}\n👥 ${left} place${left>1?'s':''} disponible${left>1?'s':''} · ${eur(T.prix)} la place\n\nRéservez directement ici 👉 ${tripUrl(T.id,'a')}\n\nL'équipe Covoit' Andelys`;
   sheet(`<h2>📋 ${esc(T.de)} → ${esc(T.vers)}</h2>
     <div class="note"><b>${dayLabel(d)} à ${hm(d)}</b> · ${eur(T.prix)} la place<br>👤 <button class="link" style="font-size:inherit" onclick="openHistory('${T.duid}','${jsq(T.conducteur||'')}')">${esc(T.conducteur||'?')}</button> ${T.verifie?'✓ Vérifié':'⏳ non vérifié'}${T.carte?' · 🪪':''}${T.instant?' · ⚡ instantanée':''}<br>👥 <b>${left} place${left>1?'s':''} restante${left>1?'s':''}</b> sur ${T.places}${T.rdv?`<br>📍 ${esc(T.rdv)}`:''}${T.note?`<br>💬 ${esc(T.note)}`:''}</div>
     <h3>Passagers</h3>${P.length?P.map(x=>`<div class="meta" style="display:block">${esc(x.prenom||'?')} · ${nPl(x.places)} · ${ST[x.statut]||x.statut}${x.paye?' · 💳 payé':''}<br><small style="color:var(--m)">demandé ${fdt(x.le)}</small></div>`).join(''):'<div class="hint">Aucune réservation pour l\'instant.</div>'}
     <h3>Membres intéressés <small style="font-weight:400;color:var(--m)">(alerte qui correspond)</small></h3>${I.length?I.map(x=>`<div class="meta" style="display:block"><button class="link" style="font-size:inherit" onclick="openHistory('${x.uid}','${jsq(x.prenom||'')}')">${esc(x.prenom||'?')}</button> · ${esc(x.alerte)}<br><small>${x.reserve?'✅ a réservé':'❌ pas réservé'} · ${ago(x.prevenu)}</small></div>`).join(''):'<div class="hint">Aucune alerte ne correspond à ce trajet.</div>'}
     ${todo.length?`<button class="btn" onclick="relance(${esc(JSON.stringify(todo.map(x=>x.email)))},${esc(JSON.stringify(todo.map(x=>x.uid)))},'${jsq(todo.length===1?todo[0].prenom||'':'')}',['${T.id}'])">✉️ Relancer ${todo.length>1?`les ${todo.length} intéressés`:esc(todo[0].prenom||'')}</button>`:''}
-    <button class="btn sec" onclick="showFbText(${esc(JSON.stringify(fb))})">📣 Post Facebook (avec lien direct)</button>
+    <button class="btn sec" onclick='fbImg(${esc(JSON.stringify({k:"trip",de:T.de,vers:T.vers,l1:dateTxt(d).replace(/^./,m=>m.toUpperCase())+" à "+hm(d),l2:left+" place"+(left>1?"s":"")+" · "+eur(T.prix)+" la place",t:fb}))})'>🖼️ Post Facebook avec image</button>
     <button class="btn sec" onclick="shareTrip('${T.id}')">🔗 Copier le lien du trajet</button>
     <button class="btn sec" onclick="closeSheet()">← Retour</button>`); }
 let ESTP='mois';
@@ -1093,11 +1120,71 @@ const SLOT={matin:'matin',midi:'midi',soir:'soir',tous:'toute la journée'};
 const SLOT_FB={matin:'le matin',midi:'le midi',soir:'le soir',tous:''};
 function fbPost(de,vers,creneau,n,quand){ de=de||'Les Andelys'; vers=vers||'n\'importe où';
   const qui = n>1 ? `${n} personnes cherchent` : 'Une personne cherche';
-  const t=`🙋 Avis aux conducteurs !\n\n${qui} un covoiturage :\n📍 ${de} → ${vers}${quand?`\n📅 ${quand}`:SLOT_FB[creneau]?`\n🕐 ${SLOT_FB[creneau]}`:''}\n\n🚗 Vous faites ce trajet ? Publiez-le en 1 minute sur Covoit' Andelys : vous partagez vos frais d'essence et vous rendez service à un voisin.\n👉 https://covoit-andelys.fr\n\n🙏 Vous ne conduisez pas ? Partagez ce post, le bon conducteur est peut-être dans vos contacts !\n\nL'équipe Covoit' Andelys\n#covoiturage #LesAndelys #Eure #entraide`;
-  const done=()=>toast('Texte copié 📋 Colle-le dans une publication Facebook');
-  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(t).then(done,()=>showFbText(t)); else showFbText(t); }
+  const t=`🙋 Avis aux conducteurs !\n\n${qui} un covoiturage :\n📍 ${de} → ${vers}${quand?`\n📅 ${quand}`:SLOT_FB[creneau]?`\n🕐 ${SLOT_FB[creneau]}`:''}\n\n🚗 Vous faites ce trajet ? Publiez-le en 1 minute sur Covoit' Andelys : vous partagez vos frais d'essence et vous rendez service à un voisin.\n👉 https://covoit-andelys.fr/?s=a\n\n🙏 Vous ne conduisez pas ? Partagez ce post, le bon conducteur est peut-être dans vos contacts !\n\nL'équipe Covoit' Andelys\n#covoiturage #LesAndelys #Eure #entraide`;
+  fbImg({k:'need',de,vers,l1:quand||SLOT_FB[creneau]||'',n,t}); }
+// ===== Post Facebook avec image (admin) =====
+const FB_GROUPS={
+ 'Les Andelys':['Les Andelys parlons-en','LES ANDELYS Actu et Ventes','Commerçants Les Andelys 27','Tu sais que tu viens des Andelys'],
+ 'Vernon':['Vernon communauté','Info VERnon','Vernon pour tous','VERNON Actu','Pubs Commerces Vernon'],
+ 'Saint-Marcel':['Tu sais que tu viens de St Marcel','Vernon communauté'],
+ 'Gaillon':['TU SAIS QUE TU ES DE GAILLON','vente et discussion Autheuil, Gaillon'],
+ "Le Val d'Hazey":["Tu sais que tu viens d'Aubevoye",'TU SAIS QUE TU ES DE GAILLON'],
+ 'Aubevoye':["Tu sais que tu viens d'Aubevoye"],
+ 'Louviers':['Tu sais que tu viens de trouver à Louviers','Louviers et alentours'],
+ 'Val-de-Reuil':['Tu sais que tu viens de Val-de-Reuil','Louviers et alentours'],
+ 'Évreux':["Tu sais que tu viens d'Évreux et de son agglo",'On aime vivre à Évreux'],
+ 'Magny-en-Vexin':['Groupe de Magny-en-Vexin','Groupe du Vexin Français'],
+ 'Vexin-sur-Epte':['Entraide Vexin sur Epte','Groupe de Saint-Clair-sur-Epte'],
+ 'Courcelles-sur-Seine':['Courcelles sur Seine'],'Pacy-sur-Eure':['Pacy-sur-Eure Forum de l\'Info'],'Port-Mort':['Port-Mort'],'Bouafles':['Tu sais que tu viens de Bouafles'],
+ '*':['Seine-Eure en mouvement']};
+function fbGroupsFor(a,b){ const out=[], of=v=>{ const r=[]; Object.keys(FB_GROUPS).forEach(k=>{ if(k!=='*'&&v&&v.toLowerCase().includes(k.toLowerCase())) FB_GROUPS[k].forEach(g=>{ if(!r.includes(g)) r.push(g); }); }); return r; };
+  const add=g=>{ if(!out.includes(g)) out.push(g); }; of(a).slice(0,3).forEach(add); of(b).slice(0,2).forEach(add); FB_GROUPS['*'].forEach(add); return out; }
+const fbLast=g=>{ try{ return +localStorage.getItem('fbg:'+g)||0; }catch(e){ return 0; } };
+function fbMark(el,g){ try{ localStorage.setItem('fbg:'+g,Date.now()); }catch(e){} el.outerHTML=fbChip(g); toast('Noté : publié dans « '+g+' »'); }
+function fbChip(g){ const t=fbLast(g), d=t?Math.floor((Date.now()-t)/864e5):null, warn=d!==null&&d<7;
+  return `<button class="chip" style="${warn?'background:#fee2e2;color:#991b1b':''}" onclick="fbMark(this,'${jsq(g)}')">${warn?'⚠️ ':''}${esc(g)}${d===null?'':d===0?' · posté aujourd\'hui':` · il y a ${d} j`}</button>`; }
+function fbWrap(c,txt,max){ const w=String(txt).split(' '), L=[]; let l=''; w.forEach(x=>{ const t=l?l+' '+x:x; if(c.measureText(t).width>max&&l){ L.push(l); l=x; } else l=t; }); if(l) L.push(l); return L; }
+function fbRR(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+function fbDraw(o){ const S=1080, cv=document.createElement('canvas'); cv.width=cv.height=S; const c=cv.getContext('2d'), F='"Segoe UI",Roboto,"Noto Sans",Arial,sans-serif', need=o.k==='need';
+  const g=c.createLinearGradient(0,0,S,S); g.addColorStop(0,'#0f766e'); g.addColorStop(1,'#14b8a6'); c.fillStyle=g; c.fillRect(0,0,S,S);
+  c.fillStyle='#fff'; c.font=`800 44px ${F}`; c.textBaseline='middle'; c.fillText('🚗 Covoit\' Andelys',72,94);
+  const badge=need?(o.n>1?'🙋 Passagers en attente':'🙋 Passager en attente'):'✅ Places disponibles'; c.font=`800 34px ${F}`; const bw=c.measureText(badge).width+56;
+  c.fillStyle='#fde68a'; fbRR(c,S-72-bw,64,bw,60,30); c.fill(); c.fillStyle='#78350f'; c.fillText(badge,S-72-bw+28,95);
+  c.fillStyle='#fff'; c.font=`800 76px ${F}`; c.textBaseline='alphabetic'; const T=need?['Conducteurs,','on a besoin de vous !']:['Trajet disponible','près de chez vous !']; c.fillText(T[0],72,232); c.fillText(T[1],72,316);
+  c.font=`500 34px ${F}`; c.fillText(need?(o.n>1?`${o.n} voisins cherchent un covoiturage :`:'Un voisin cherche un covoiturage :'):'Une place pour vous dans ce covoiturage :',72,376);
+  c.fillStyle='#fff'; fbRR(c,72,410,S-144,need?110:220,28); c.fill(); c.fillStyle='#0f4c45';
+  c.font=`600 32px ${F}`; const rsv=need&&o.l1?c.measureText(o.l1).width+40:0;
+  let fs=50; const route=`📍 ${o.de} → ${o.vers}`; do{ c.font=`800 ${fs}px ${F}`; fs-=2; } while(c.measureText(route).width>S-220-rsv&&fs>28); c.fillText(route,108,need?480:476);
+  c.font=`600 32px ${F}`; c.fillStyle='#0f766e';
+  if(need){ if(o.l1){ c.textAlign='right'; c.fillText(o.l1,S-108,480); c.textAlign='left'; } }
+  else { if(o.l1) c.fillText('📅 '+o.l1,108,536); if(o.l2) c.fillText('👥 '+o.l2,108,592); }
+  const B=need?['🔔 Il sera prévenu dès que vous publiez','✅ Inscription gratuite','💶 Vous fixez votre prix (partage des frais)','✋ Vous choisissez vos passagers']:['⚡ Réservez en quelques secondes','💶 Frais partagés, petit prix','🔔 Créez une alerte pour vos trajets','✅ Inscription gratuite'];
+  c.fillStyle='#fff'; c.font=`500 32px ${F}`; let y=need?586:690; fbWrap(c,need?'Vous faites ce trajet ? Publiez-le en 1 minute et partagez vos frais d\'essence.':'Réservez directement dans l\'appli, avec le lien sous ce post.',S-144).forEach(l=>{ c.fillText(l,72,y); y+=42; });
+  y+=26; c.font=`700 34px ${F}`; B.forEach(l=>{ if(y<910){ c.fillText(l,72,y); y+=56; } });
+  c.fillStyle='#fde68a'; fbRR(c,72,926,S-144,90,30); c.fill(); c.fillStyle='#78350f'; c.font=`800 44px ${F}`; c.textAlign='center'; c.fillText('👉 covoit-andelys.fr',S/2,986); c.textAlign='left';
+  return cv; }
+function fbImg(o){
+  const cv=fbDraw(o); window._fb={o,cv}; const G=fbGroupsFor(o.de,o.vers);
+  sheet(`<h2>🖼️ Post Facebook</h2><img src="${cv.toDataURL('image/png')}" style="width:100%;border-radius:14px;display:block">
+    <button class="btn" style="margin-top:12px" onclick="fbShare()">📤 Copier le texte et partager l'image</button>
+    <div class="hint">Choisis Facebook, puis le groupe. Dans la publication, <b>appuie longuement → Coller</b> pour ajouter le texte.</div>
+    <h3 style="margin-top:14px">👉 Groupes conseillés</h3><div class="hint">Touche le groupe une fois publié, pour garder la date. ⚠️ = déjà posté il y a moins de 7 jours : évite d'y republier.</div>
+    <div class="chips">${G.map(fbChip).join('')}</div>
+    <div class="note warn" style="margin-top:10px">📏 Règle d'or : <b>1 post par groupe et par semaine maximum</b>, sinon les admins peuvent exclure la page.</div>
+    <details style="margin-top:10px"><summary><b>📝 Voir le texte</b></summary><textarea rows="10" style="width:100%;margin-top:8px">${esc(o.t)}</textarea></details>
+    <button class="btn sec" onclick="fbSave()">💾 Enregistrer l'image</button><button class="btn sec" onclick="closeSheet()">← Retour</button>`); }
+async function fbCopy(){ const t=window._fb?.o.t||''; try{ await navigator.clipboard.writeText(t); return true; }catch(e){ return false; } }
+function fbBlob(){ return new Promise(r=>window._fb.cv.toBlob(r,'image/png')); }
+async function fbShare(){ const ok=await fbCopy(); const b=await fbBlob(), f=new File([b],'covoit-andelys-post.png',{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){ try{ await navigator.share({files:[f]}); toast(ok?'Texte copié 📋 Colle-le dans la publication':'Image partagée'); }catch(e){} }
+  else { fbSave(); toast(ok?'Texte copié 📋 et image enregistrée':'Image enregistrée'); } }
+async function fbSave(){ const b=await fbBlob(), u=URL.createObjectURL(b), a=document.createElement('a'); a.href=u; a.download='covoit-andelys-post.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),4000); }
 function showFbText(t){ sheet(`<h2>📣 Post Facebook</h2><div class="hint">Appui long → Tout sélectionner → Copier</div><textarea rows="12" style="width:100%">${esc(t)}</textarea><button class="btn sec" onclick="closeSheet()">← Retour</button>`); }
-async function loadStats(){ const el=$('#astats'); if(!el) return; const {data,error}=await sb.rpc('admin_stats');
+async function loadShareStats(){ const el=$('#astats'); if(!el||$('#ashare')) return; const {data,error}=await sb.rpc('admin_share_stats'); if(error||!data) return;
+  const g=(s,e)=>(data.find(x=>x.src===s&&x.ev===e)||{}).n||0, L={m:'🔗 Partages des membres',a:'📣 Tes posts',i:'📣 Invitations'};
+  const rows=['m','a','i'].map(s=>`<div class="meta"><span>${L[s]}</span><span style="text-align:right"><b>${g(s,'visit')}</b> visiteurs · <b>${g(s,'signup')}</b> inscrits · <b>${g(s,'booking')}</b> réserv.</span></div>`).join('');
+  el.insertAdjacentHTML('afterend',`<div class="card" id="ashare"><h3>📈 D'où viennent les visiteurs <small style="font-weight:400;color:var(--m)">(30 derniers jours)</small></h3>${rows}<div class="hint">Compte seulement les liens partagés depuis la mise à jour du 28/11.</div></div>`); }
+async function loadStats(){ const el=$('#astats'); if(!el) return; loadShareStats(); const {data,error}=await sb.rpc('admin_stats');
   if(error){ el.innerHTML=`<div class="hint">${esc(errMsg(error))}</div>`; return; }
   const d=data||{}, n=x=>Number(x||0).toLocaleString('fr-FR'), pc=(a,b)=>b?Math.round(100*a/b)+' %':'–', co2=x=>Math.round(Number(x||0)*0.2);
   const tile=(v,l)=>`<div class="note" style="text-align:center;margin:0"><b style="font-size:22px">${v}</b><br><small>${l}</small></div>`;
@@ -1275,7 +1362,11 @@ async function saveAlert(btn){ btn.disabled=true;
   if(mode==='days'&&!days.length){btn.disabled=false;return toast('Choisis au moins un jour');}
   const {error}=await sb.from('trip_alerts').insert({from_place:f||null,to_place:t||null,slot:$('#als').value,
     alert_date:mode==='date'?$('#alja').value:null, alert_days:mode==='days'?days:null, alert_time:$('#alh').value||null});
-  if(error){btn.disabled=false;return toast(errMsg(error));} closeSheet(); toast('Alerte créée 🔔'); if(tab==='profile') loadAlerts(); }
+  if(error){btn.disabled=false;return toast(errMsg(error));} if(tab==='profile') loadAlerts();
+  const qd=whenText(mode==='date'?$('#alja').value:null,mode==='days'?days:null,$('#alh').value||null,$('#als').value)||'';
+  sheet(`<h2>🔔 Alerte créée !</h2><div class="note">Tu seras prévenu dès qu'un trajet <b>${esc(f)} → ${esc(t)}</b> est publié.</div>
+    <div class="hint" style="margin-top:10px">💡 Un collègue, un voisin ou un ami fait peut-être déjà ce trajet. Partage ta demande : s'il le publie, tu es prévenu tout de suite.</div>
+    <button class="btn" style="margin-top:12px" onclick="shareNeed('${jsq(f)}','${jsq(t)}','${jsq(qd)}')">🔗 Partager ma demande</button><button class="btn sec" onclick="closeSheet()">Plus tard</button>`); }
 async function openStats(){ sheet('<h2>📊 Mon historique</h2><div class="hint">Chargement…</div>');
   const now=new Date().toISOString();
   const [dr, ps] = await Promise.all([
@@ -1298,7 +1389,7 @@ async function openStats(){ sheet('<h2>📊 Mon historique</h2><div class="hint"
     <button class="btn sec" onclick="closeSheet()">Fermer</button>`; }
 async function loadAlerts(){ const el=$('#alerts'); if(!el) return;
   const {data}=await sb.from('trip_alerts').select('*').order('created_at');
-  el.innerHTML=(data||[]).map(a=>`<div class="meta"><span>${esc(a.from_place||'Partout')} → ${esc(a.to_place||'Partout')}<br><small class="hint">${esc(whenText(a.alert_date,a.alert_days,a.alert_time,a.slot)||SLOTS[a.slot])}</small></span><button class="btn small sec" onclick="delAlert(${a.id})">Supprimer</button></div>`).join('')||'<div class="hint">Aucune alerte. Crée-en une pour être prévenu des nouveaux trajets.</div>'; }
+  el.innerHTML=(data||[]).map(a=>`<div class="meta"><span>${esc(a.from_place||'Partout')} → ${esc(a.to_place||'Partout')}<br><small class="hint">${esc(whenText(a.alert_date,a.alert_days,a.alert_time,a.slot)||SLOTS[a.slot])}</small></span><span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${a.from_place&&a.to_place?`<button class="btn small sec" onclick="shareNeed('${jsq(a.from_place)}','${jsq(a.to_place)}','${jsq(whenText(a.alert_date,a.alert_days,a.alert_time,a.slot)||'')}')">🔗 Partager</button>`:''}<button class="btn small sec" onclick="delAlert(${a.id})">Supprimer</button></span></div>`).join('')||'<div class="hint">Aucune alerte. Crée-en une pour être prévenu des nouveaux trajets.</div>'; }
 async function delAlert(id){ await sb.from('trip_alerts').delete().eq('id',id); loadAlerts(); }
 
 /* ======== Avis ======== */

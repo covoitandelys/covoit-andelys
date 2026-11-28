@@ -221,7 +221,7 @@ function addEyes(root){ (root||document).querySelectorAll('input[type=password]:
 new MutationObserver(()=>addEyes()).observe(document.documentElement,{childList:true,subtree:true});
 function sheet(html){ if($('#bg').style.display!=='flex' && $('#adm')?.style.display==='block') navPush(); $('#sheet').innerHTML=html;$('#bg').style.display='flex';}
 // Mise à jour automatique : au retour dans l'appli, recharge si une nouvelle version est en ligne (jamais pendant une saisie ou une fenêtre ouverte)
-const APP_V='2026-11-28b'; let _vChk=0;
+const APP_V='2026-11-28c'; let _vChk=0;
 async function checkUpdate(){ if(!/^https?:/.test(location.protocol)||Date.now()-_vChk<3e5) return; _vChk=Date.now();
   try{ const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'}); if(!r.ok) return; const m=/const APP_V='([^']+)'/.exec(await r.text());
     if(!m||m[1]===APP_V) return; const busy=$('#bg').style.display==='flex'||$('#adm')?.style.display==='block'||/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'');
@@ -1061,7 +1061,7 @@ async function openAdmin(refresh){
   A.innerHTML=`<div class="admh"><b>🛠️ Administration</b><button class="btn small sec" style="width:auto" onclick="closeAdmin()">✕ Quitter</button></div>
     <div class="admt">${ADM_TABS.map(([k,e,l])=>`<button data-t="${k}" onclick="admTab('${k}')">${e} ${l}<span class="admn" id="admn-${k}"></span></button>`).join('')}</div>
     <div class="admc">
-     <section data-t="home"><h3>À traiter</h3><div id="atodo"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📈 Statistiques</h3><div id="astats"><div class="hint">Chargement…</div></div></section>
+     <section data-t="home"><button class="btn" style="margin:4px 0 12px" onclick="weekPosts()">📅 Posts de la semaine (trajets et demandes)</button><h3>À traiter</h3><div id="atodo"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">📈 Statistiques</h3><div id="astats"><div class="hint">Chargement…</div></div></section>
      <section data-t="members"><input id="aq" placeholder="Rechercher un prénom ou un e-mail"><div class="chips" id="afil" style="margin-top:8px"></div><div id="alist"><div class="hint">Chargement…</div></div><h3 style="margin-top:16px">🗄️ Comptes supprimés <small style="font-weight:400;color:var(--m)">(gardés 1 an)</small></h3><div id="aarch"><div class="hint">Chargement…</div></div></section>
      <section data-t="trips"><h3>🚗 Trajets à venir</h3><div id="atrips"><div class="hint">Chargement…</div></div></section>
      <section data-t="dem"><h3>🔔 Alertes et demandes</h3><div id="adem"><div class="hint">Chargement…</div></div></section>
@@ -1179,6 +1179,46 @@ async function fbShare(){ const ok=await fbCopy(); const b=await fbBlob(), f=new
   if(navigator.canShare&&navigator.canShare({files:[f]})){ try{ await navigator.share({files:[f]}); toast(ok?'Texte copié 📋 Colle-le dans la publication':'Image partagée'); }catch(e){} }
   else { fbSave(); toast(ok?'Texte copié 📋 et image enregistrée':'Image enregistrée'); } }
 async function fbSave(){ const b=await fbBlob(), u=URL.createObjectURL(b), a=document.createElement('a'); a.href=u; a.download='covoit-andelys-post.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),4000); }
+// ===== Posts de la semaine (page Facebook) =====
+const WK_CITIES=['Toutes','Les Andelys','Vernon','Gaillon','Louviers','Évreux'];
+const WK={k:'trips',city:'Toutes'};
+const wkIn=(r,c)=>c==='Toutes'||[r.de,r.vers].some(v=>(v||'').toLowerCase().includes(c.toLowerCase()));
+async function wkData(){ const [UT,{data}]=await Promise.all([upTrips(),sb.rpc('admin_demand')]); const end=Date.now()+7*864e5, DN=['dim','lun','mar','mer','jeu','ven','sam'];
+  const g={}; UT.filter(t=>new Date(t.depart_at)<end&&t.seats-t.booked>0).forEach(t=>{ const d=new Date(t.depart_at), k=[t.from_place,t.to_place,hm(d),t.price].join('|');
+    (g[k]=g[k]||{de:t.from_place,vers:t.to_place,h:hm(d),prix:t.price,first:+d,days:[]}).days.push(d); });
+  const trips=Object.values(g).sort((a,b)=>a.first-b.first).map(r=>({...r,sub:(r.days.length>1?r.days.map(d=>DN[d.getDay()]).join(', '):dateTxt(r.days[0]))+' à '+r.h.replace(':','h')+' · '+eur(r.prix)}));
+  const dm={}; ((data||{}).alertes||[]).filter(a=>a.de&&a.vers&&!alertMatches(a,UT,a.uid).length).forEach(a=>{ const k=[a.de,a.vers,a.creneau||'tous'].join('|');
+    (dm[k]=dm[k]||{de:a.de,vers:a.vers,c:a.creneau||'tous',u:new Set()}).u.add(a.uid); });
+  const needs=Object.values(dm).map(r=>({de:r.de,vers:r.vers,n:r.u.size,sub:(SLOT_FB[r.c]||'n\'importe quand')+' · '+r.u.size+' personne'+(r.u.size>1?'s':'')})).sort((a,b)=>b.n-a.n);
+  return {trips,needs}; }
+function fbDrawList(k,rows,city){ const S=1080, cv=document.createElement('canvas'); cv.width=cv.height=S; const c=cv.getContext('2d'), F='"Segoe UI",Roboto,"Noto Sans",Arial,sans-serif', T=k==='trips';
+  const g=c.createLinearGradient(0,0,S,S); g.addColorStop(0,'#0f766e'); g.addColorStop(1,'#14b8a6'); c.fillStyle=g; c.fillRect(0,0,S,S);
+  c.textBaseline='middle'; c.fillStyle='#fff'; c.font=`800 44px ${F}`; c.fillText('🚗 Covoit\' Andelys',72,94);
+  const badge=T?'📅 Cette semaine':'🙋 Cette semaine'; c.font=`800 34px ${F}`; const bw=c.measureText(badge).width+56;
+  c.fillStyle='#fde68a'; fbRR(c,S-72-bw,64,bw,60,30); c.fill(); c.fillStyle='#78350f'; c.fillText(badge,S-72-bw+28,95);
+  c.textBaseline='alphabetic'; c.fillStyle='#fff'; c.font=`800 70px ${F}`; c.fillText(T?'Les trajets':'Ils cherchent',72,228); c.fillText(T?'de la semaine !':'un covoiturage !',72,306);
+  c.font=`500 32px ${F}`; c.fillText(T?(city!=='Toutes'?`Au départ ou à l'arrivée de ${city} :`:'Réservez votre place dans l\'appli :'):(city!=='Toutes'?`Autour de ${city}, vous faites ces trajets ?`:'Vous faites l\'un de ces trajets ?'),72,362);
+  const R=rows.slice(0,T?6:5), top=392, bot=900, gap=14, h=Math.min(118,Math.floor((bot-top-gap*(R.length-1))/R.length));
+  R.forEach((r,i)=>{ const y=top+i*(h+gap); c.fillStyle='#fff'; fbRR(c,72,y,S-144,h,24); c.fill(); c.fillStyle='#0f4c45';
+    let fs=Math.min(40,Math.round(h*0.38)); const route=`${r.de} → ${r.vers}`; do{ c.font=`800 ${fs}px ${F}`; fs-=2; } while(c.measureText(route).width>S-200&&fs>24); c.fillText(route,100,y+h*0.44);
+    c.fillStyle='#0f766e'; c.font=`600 ${Math.max(26,Math.min(30,Math.round(h*0.3)))}px ${F}`; c.fillText(r.sub,100,y+h*0.83); });
+  c.fillStyle='#fde68a'; fbRR(c,72,926,S-144,90,30); c.fill(); c.fillStyle='#78350f'; c.font=`800 44px ${F}`; c.textAlign='center'; c.fillText('👉 covoit-andelys.fr',S/2,986); c.textAlign='left';
+  return cv; }
+async function weekPosts(k,city){ if(k) WK.k=k; if(city) WK.city=city; sheet('<h2>📅 Posts de la semaine</h2><div class="hint">Chargement…</div>');
+  const D=await wkData(), T=WK.k==='trips', rows=(T?D.trips:D.needs).filter(r=>wkIn(r,WK.city));
+  const tabs=`<div class="chips"><button class="chip ${T?'on':''}" onclick="weekPosts('trips')">🚗 Trajets</button><button class="chip ${T?'':'on'}" onclick="weekPosts('needs')">🙋 Demandes</button></div>
+    <div class="chips" style="margin-top:6px">${WK_CITIES.map(c=>`<button class="chip ${c===WK.city?'on':''}" onclick="weekPosts(null,'${jsq(c)}')">${esc(c)}</button>`).join('')}</div>`;
+  if(rows.length<2) return sheet(`<h2>📅 Posts de la semaine</h2>${tabs}<div class="note" style="margin-top:10px">${rows.length?'Une seule':'Aucune'} ${T?'ligne de trajet':'demande sans trajet'} ${WK.city!=='Toutes'?'pour '+esc(WK.city):''} cette semaine : pas assez pour une image. ${rows.length===1?'Utilise plutôt le post d\'un seul '+(T?'trajet (📋 Fiche)':'trajet demandé (onglet Demandes)')+'.':''}</div><button class="btn sec" onclick="closeSheet()">← Retour</button>`);
+  const R=rows.slice(0,T?6:5), cv=fbDrawList(WK.k,R,WK.city), cityTxt=WK.city!=='Toutes'?(T?` autour de ${WK.city}`:` autour de ${WK.city}`):'';
+  const t=T?`🚗 Les covoiturages de la semaine${cityTxt}\n\n${R.map(r=>`• ${r.de} → ${r.vers} : ${r.sub}\n👉 ${routeUrl(r.de,r.vers,'a')}`).join('\n\n')}\n\nRéservez directement dans l'appli, inscription gratuite.\nL'équipe Covoit' Andelys\n#covoiturage #LesAndelys #Eure`
+    :`🙋 Ils cherchent un covoiturage cette semaine${cityTxt}\n\n${R.map(r=>`• ${r.de} → ${r.vers} (${r.sub})`).join('\n')}\n\n🚗 Vous faites l'un de ces trajets ? Publiez-le en 1 minute sur Covoit' Andelys : ils sont prévenus tout de suite et vous partagez vos frais d'essence.\n👉 https://covoit-andelys.fr/?s=a\n\nL'équipe Covoit' Andelys\n#covoiturage #entraide #Eure`;
+  window._fb={o:{t},cv}; const G=WK.city==='Toutes'?[]:fbGroupsFor(WK.city,'');
+  sheet(`<h2>📅 Posts de la semaine</h2>${tabs}<img src="${cv.toDataURL('image/png')}" style="width:100%;border-radius:14px;display:block;margin-top:10px">
+    <button class="btn" style="margin-top:12px" onclick="fbShare()">📤 Copier le texte et partager l'image</button>
+    <div class="hint">${WK.city==='Toutes'?`Publie-le sur <b>ta page</b> (${T?'dimanche 11h':'mercredi'}), puis partage le post de la page dans <b>1 groupe</b> cette semaine.`:'Choisis Facebook, puis le groupe. Dans la publication : appui long → Coller.'}</div>
+    ${G.length?`<h3 style="margin-top:14px">👉 Groupes conseillés</h3><div class="chips">${G.map(fbChip).join('')}</div><div class="note warn" style="margin-top:10px">📏 1 post par groupe et par semaine maximum.</div>`:''}
+    <details style="margin-top:10px"><summary><b>📝 Voir le texte</b></summary><textarea rows="10" style="width:100%;margin-top:8px">${esc(t)}</textarea></details>
+    <button class="btn sec" onclick="fbSave()">💾 Enregistrer l'image</button><button class="btn sec" onclick="closeSheet()">← Retour</button>`); }
 function showFbText(t){ sheet(`<h2>📣 Post Facebook</h2><div class="hint">Appui long → Tout sélectionner → Copier</div><textarea rows="12" style="width:100%">${esc(t)}</textarea><button class="btn sec" onclick="closeSheet()">← Retour</button>`); }
 async function loadShareStats(){ const el=$('#astats'); if(!el||$('#ashare')) return; const {data,error}=await sb.rpc('admin_share_stats'); if(error||!data) return;
   const g=(s,e)=>(data.find(x=>x.src===s&&x.ev===e)||{}).n||0, L={m:'🔗 Partages des membres',a:'📣 Tes posts',i:'📣 Invitations'};
